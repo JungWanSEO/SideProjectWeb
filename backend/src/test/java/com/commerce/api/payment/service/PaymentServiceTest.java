@@ -1,0 +1,138 @@
+package com.commerce.api.payment.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.order.dto.OrderResponse;
+import com.commerce.api.order.entity.OrderStatus;
+import com.commerce.api.order.service.OrderService;
+import com.commerce.api.payment.dto.PaymentRequest;
+import com.commerce.api.payment.dto.PaymentResponse;
+import com.commerce.api.payment.entity.Payment;
+import com.commerce.api.payment.entity.PaymentStatus;
+import com.commerce.api.payment.gateway.PaymentApproval;
+import com.commerce.api.payment.gateway.PaymentGateway;
+import com.commerce.api.payment.repository.PaymentRepository;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+
+/**
+ * PaymentService 단위 테스트 — 멱등성 / 주문검증 / PG승인 / 재고차감 위임.
+ */
+@ExtendWith(MockitoExtension.class)
+class PaymentServiceTest {
+
+    @Mock
+    private PaymentRepository paymentRepository;
+    @Mock
+    private OrderService orderService;
+    @Mock
+    private PaymentGateway paymentGateway;
+
+    @InjectMocks
+    private PaymentService paymentService;
+
+    private OrderResponse order(Long id, Long memberId, OrderStatus status, long total) {
+        return new OrderResponse(id, memberId, status, total, List.of(), LocalDateTime.now());
+    }
+
+    private PaymentRequest request() {
+        return new PaymentRequest(1L, "key-1", "MOCK_CARD");
+    }
+
+    @Test
+    @DisplayName("결제 성공 - 승인 + 재고차감(주문 PAID) + 결제 PAID")
+    void pay_success() {
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
+        given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+
+        PaymentResponse response = paymentService.pay(100L, request());
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+        assertThat(response.pgTransactionId()).isEqualTo("MOCK-tx-1");
+        assertThat(response.amount()).isEqualTo(30000L);
+        verify(orderService).pay(1L);                         // 재고 차감 + 주문 PAID 위임
+        verify(paymentRepository).save(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("멱등성 - 같은 키로 이미 결제됐으면 재실행 없이 기존 결과 반환")
+    void pay_idempotentReplay() {
+        Payment done = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        done.markPaid("MOCK-tx-1");
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.of(done));
+
+        PaymentResponse response = paymentService.pay(100L, request());
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+        verify(paymentGateway, never()).approve(any());   // 승인 재요청 없음
+        verify(orderService, never()).pay(any());          // 재고 재차감 없음
+    }
+
+    @Test
+    @DisplayName("결제 실패 - 결제 가능 상태(PENDING)가 아니면 409, 승인·차감 안 함")
+    void pay_notPending() {
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
+        given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PAID, 30000L));
+
+        assertThatThrownBy(() -> paymentService.pay(100L, request()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("결제할 수 없는 주문 상태");
+        verify(paymentGateway, never()).approve(any());
+        verify(orderService, never()).pay(any());
+    }
+
+    @Test
+    @DisplayName("결제 실패 - PG 거절이면 402, 결제 FAILED 저장, 재고 차감 안 함")
+    void pay_gatewayDeclined() {
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
+        given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGateway.approve(any())).willReturn(PaymentApproval.failed("한도 초과"));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+
+        assertThatThrownBy(() -> paymentService.pay(100L, request()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("결제가 거절");
+
+        verify(orderService, never()).pay(any());
+        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(PaymentStatus.FAILED);   // 실패 기록
+    }
+
+    @Test
+    @DisplayName("결제 실패 - 승인됐지만 재고 부족이면 결제 FAILED 저장 후 예외 전파")
+    void pay_insufficientStock() {
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
+        given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+        willThrow(new BusinessException(HttpStatus.CONFLICT, "재고가 부족합니다."))
+                .given(orderService).pay(1L);
+
+        assertThatThrownBy(() -> paymentService.pay(100L, request()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("재고가 부족합니다");
+
+        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(PaymentStatus.FAILED);
+    }
+}
