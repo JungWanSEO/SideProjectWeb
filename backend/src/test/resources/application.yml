@@ -1,0 +1,25 @@
+# 테스트 전용 설정 — H2 인메모리 (MySQL 없이도 테스트가 독립적으로 돈다)
+spring:
+  # 테스트는 Flyway(MySQL용 V1 스크립트) 대신 H2 + Hibernate create-drop으로 스키마 생성.
+  flyway:
+    enabled: false
+
+  datasource:
+    url: jdbc:h2:mem:commerce;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100   # 운영과 동일하게 N+1 완화 설정 (목록 조회 시 항목 IN 페치)
+    show-sql: true
+
+jwt:
+  secret: test-secret-key-for-junit-only-0123456789-abcdefghij
+  access-token-validity-ms: 1800000
+  refresh-token-validity-ms: 1209600000

@@ -1,0 +1,41 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: commerce-mysql
+    ports:
+      # 보안: localhost(127.0.0.1)에만 바인딩 → 외부 네트워크에서 MySQL 접근 차단(랜섬웨어 노출 차단).
+      # host 3307 → container 3306. (호스트 3306은 네이티브 MySQL이 사용 중이라 3307로 매핑)
+      - "127.0.0.1:3307:3306"
+    environment:
+      # 값은 같은 디렉터리의 .env 에서 자동 주입(git 추적 제외). .env.example 참고.
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - commerce-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 브라우저용 DB 뷰어. http://localhost:8081 (앱이 8080을 쓰므로 8081로 게시).
+  # 로그인 폼: System=MySQL, Server=mysql(서비스명, 같은 compose 네트워크), DB=commerce.
+  adminer:
+    image: adminer:4.8.1
+    container_name: commerce-adminer
+    ports:
+      - "127.0.0.1:8081:8080"   # 로컬만 노출 (외부 접근 차단)
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql   # 로그인 폼 Server 칸 기본값
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  commerce-mysql-data:

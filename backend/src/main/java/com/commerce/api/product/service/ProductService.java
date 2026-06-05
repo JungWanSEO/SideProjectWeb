@@ -1,0 +1,127 @@
+package com.commerce.api.product.service;
+
+import com.commerce.api.brand.entity.Brand;
+import com.commerce.api.brand.repository.BrandRepository;
+import com.commerce.api.category.entity.Category;
+import com.commerce.api.category.repository.CategoryRepository;
+import com.commerce.api.global.common.PageResponse;
+import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.product.dto.ProductCreateRequest;
+import com.commerce.api.product.dto.ProductResponse;
+import com.commerce.api.product.dto.ProductSearchCondition;
+import com.commerce.api.product.entity.Product;
+import com.commerce.api.product.entity.ProductOption;
+import com.commerce.api.product.entity.ProductStatus;
+import com.commerce.api.product.repository.ProductRepository;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.repository.CrudRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 상품 비즈니스 로직. 등록 / 단건 조회 / 검색.
+ *
+ * <p>Product는 카테고리·브랜드를 ID(Long)로만 참조한다(architecture.md §11 ID 참조 원칙).
+ * 응답에 이름이 필요하면 여기서 카테고리/브랜드를 조회해 채운다(enrich) — Cart의 상품 enrich와 같은 방식.
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class ProductService {
+
+    private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
+    private final BrandRepository brandRepository;
+
+    /** 공개 목록에 노출할 상태: 판매중·품절. 판매중지(DISCONTINUED)는 제외한다. */
+    private static final List<ProductStatus> VISIBLE_STATUSES =
+            List.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT);
+
+    /**
+     * 공개 상품 목록 조회 / 검색·필터 (페이지).
+     * 정책(VISIBLE_STATUSES)은 서비스가 쥐고 쿼리 조립은 리포지토리에 위임. 결과의 카테고리·브랜드
+     * 이름은 id를 모아 한 번에 조회해 채운다(N+1 회피 — Cart enrich와 동일 발상).
+     */
+    public PageResponse<ProductResponse> getProducts(ProductSearchCondition condition, Pageable pageable) {
+        Page<Product> page = productRepository.search(VISIBLE_STATUSES, condition, pageable);
+
+        Map<Long, String> categoryNames = categoryNameMap(page.getContent());
+        Map<Long, String> brandNames = brandNameMap(page.getContent());
+
+        // Map.get(null)은 null을 돌려주므로 categoryId/brandId가 없는 상품도 안전하다.
+        return PageResponse.from(page.map(product -> ProductResponse.of(
+                product, categoryNames.get(product.getCategoryId()), brandNames.get(product.getBrandId()))));
+    }
+
+    /** 상품 등록: 신규 상품은 ON_SALE. 카테고리/브랜드 id가 주어지면 존재를 검증(없으면 400). */
+    @Transactional
+    public ProductResponse create(ProductCreateRequest request) {
+        validateRefExists(categoryRepository, request.categoryId(), "카테고리");
+        validateRefExists(brandRepository, request.brandId(), "브랜드");
+
+        Product product = Product.builder()
+                .name(request.name())
+                .price(request.price())
+                .description(request.description())
+                .status(ProductStatus.ON_SALE)
+                .categoryId(request.categoryId())
+                .brandId(request.brandId())
+                .build();
+
+        // 옵션(사이즈별 재고)을 애그리거트 루트에 추가 → cascade로 함께 저장
+        request.options().forEach(opt ->
+                product.addOption(ProductOption.create(opt.size(), opt.stock())));
+
+        return enrich(productRepository.save(product));
+    }
+
+    /** 단건 조회 */
+    public ProductResponse getProduct(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."));
+        return enrich(product);
+    }
+
+    // --- enrich: 상품의 categoryId/brandId로 이름을 채워 응답 생성 ---
+
+    /** 단건 enrich: 카테고리/브랜드를 각각 조회해 이름을 채운다(없으면 null). */
+    private ProductResponse enrich(Product product) {
+        String categoryName = product.getCategoryId() == null ? null
+                : categoryRepository.findById(product.getCategoryId()).map(Category::getName).orElse(null);
+        String brandName = product.getBrandId() == null ? null
+                : brandRepository.findById(product.getBrandId()).map(Brand::getName).orElse(null);
+        return ProductResponse.of(product, categoryName, brandName);
+    }
+
+    /** 목록용: 상품들의 categoryId를 모아 한 번에 조회 → {id: name} 맵. */
+    private Map<Long, String> categoryNameMap(List<Product> products) {
+        Set<Long> ids = products.stream().map(Product::getCategoryId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        return categoryRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Category::getId, Category::getName));
+    }
+
+    /** 목록용: 상품들의 brandId를 모아 한 번에 조회 → {id: name} 맵. */
+    private Map<Long, String> brandNameMap(List<Product> products) {
+        Set<Long> ids = products.stream().map(Product::getBrandId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        return brandRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Brand::getId, Brand::getName));
+    }
+
+    /** 참조 id가 주어졌는데 해당 엔티티가 없으면 400. (Category/Brand 리포지토리 공용) */
+    private void validateRefExists(CrudRepository<?, Long> repository, Long id, String label) {
+        if (id != null && !repository.existsById(id)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "존재하지 않는 " + label + "입니다. (id: " + id + ")");
+        }
+    }
+}

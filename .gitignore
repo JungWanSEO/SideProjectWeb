@@ -1,0 +1,29 @@
+# ── 빌드 & Gradle (모든 모듈) ──
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ── IDE ──
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── 로그 ──
+*.log
+
+# ── 환경/시크릿 ──
+.env
+*.env.local
+
+# ── 프론트엔드 (예정) ──
+node_modules/
+dist/
+.next/
+
+# 참고: backend/.gradle, backend/build 는 위 규칙으로 무시됨.
+#       .claude/, docs/, CLAUDE.md 는 추적 대상(프로젝트 자산).

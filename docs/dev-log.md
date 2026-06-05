@@ -1,0 +1,860 @@
+# 개발 일지 (Dev Log)
+
+> 추가 / 결정 / 문제·해결이 생길 때마다 기록한다.
+> 목적: 면접용 근거(개발기간·결정·문제해결 스토리) + Claude 그라운딩.
+> 작성법은 `dev-log` skill 참고.
+
+## 2026-05-31 (1일차)
+
+### 추가
+- 프로젝트 세팅: Spring Initializr로 생성 (Spring Boot 3.5.14, Java 21, Gradle Groovy)
+  - 좌표: groupId `com.commerce`, artifactId `commerce-api`, 패키지 `com.commerce.api`
+  - 의존성: Web, Data JPA, MySQL, Lombok, Validation, Actuator, H2
+- 도메인형 패키지 구조 생성: member / product / cart / order (각 controller·service·repository·entity·dto) + global(config·exception·common)
+- 프로젝트 문서/하네스 초석 구축: CLAUDE.md, docs/architecture.md, docs/dev-log.md, skills(add-domain·dev-log)
+
+### 결정
+- **Spring Boot 버전을 4.0이 아닌 3.5.14로 고정**
+  - 이유: 3.4↓ → 4.0 직행은 호환성 이슈가 있어 공식 문서가 3.5 경유 업그레이드를 강하게 권장. 또한 강의·자료 대부분이 3.x 기준이라 의존성 이름(`spring-boot-starter-web` 등)이 일치.
+- **패키지 구조: 계층형 대신 도메인형 선택**
+  - 이유: 응집도·유지보수성·확장성이 높고, 추후 MSA 전환이 용이. 이커머스는 도메인(회원/상품/주문) 경계가 뚜렷해 도메인형이 자연스러움.
+- **문서 3계층 분리(하네스 엔지니어링)**: CLAUDE.md(항상 로딩, 짧게) / Skill(필요 시 로딩, 상세 절차) / docs(참고 자료)
+  - 이유: CLAUDE.md가 길어지면 컨텍스트를 잠식해 Claude의 오류율이 올라감. 점진적 공개로 분리해 그라운딩 품질 유지.
+
+### 문제 / 해결
+- **[증상]** 첫 프로젝트 생성 시 Spring Boot 4.0.6이 설치됨.
+  - **[원인]** Initializr의 bootVersion을 비워두면 기본값(최신 4.0)으로 생성됨.
+  - **[해결]** bootVersion을 `3.5.14`로 명시해 재생성. 의존성 이름도 3.x 방식으로 정상화됨.
+  - **[교훈]** Initializr에서 버전을 비워두지 말 것. 마이그레이션은 단계(3.5 경유)를 지키는 게 안전.
+
+---
+
+## 2026-05-31 (1일차) — member 도메인 구현
+
+### 추가
+- **DB 설정**: `application.properties` → `application.yml`로 교체. H2 인메모리(MODE=MySQL), `ddl-auto: create-drop`, `show-sql`, H2 콘솔 활성화.
+- **global 기반**
+  - `BaseEntity` (@MappedSuperclass + JPA Auditing): 모든 엔티티에 createdAt/updatedAt 자동 기록. `JpaConfig`에 `@EnableJpaAuditing`.
+  - `ApiResponse<T>`: 공통 응답 포맷 {success, message, data}.
+  - `GlobalExceptionHandler` (@RestControllerAdvice) + `BusinessException`(HttpStatus 보유).
+- **member 도메인 (가입 + 단건조회)**: Member(entity) / MemberRepository / MemberSignupRequest·MemberResponse(record DTO) / MemberService / MemberController.
+  - API: `POST /api/members`(가입, 201), `GET /api/members/{id}`(조회, 200).
+- 검증 완료: 가입 201, 조회 200, 이메일 중복 409, 입력검증 400, 없는 회원 404, 한글(UTF-8) 정상.
+
+### 결정
+- **오늘 DB는 H2 인메모리**: Docker 없이 즉시 실행·검증. MySQL 전환은 다음 마일스톤. (MODE=MySQL로 문법 호환해 전환 부담 최소화)
+- **비밀번호 평문 저장 (TODO)**: Spring Security 미도입 상태라 BCrypt 암호화는 인증 마일스톤으로 분리. 오늘은 JPA/계층 흐름 학습에 집중.
+- **DTO는 record 사용**: Java 21 record로 불변 DTO 간결화.
+
+### 문제 / 해결
+- **[증상]** 한글 닉네임 회원가입이 500 에러. 게다가 로그에 스택트레이스가 없음.
+  - **[원인1]** 전역 핸들러가 `Exception`을 통째로 잡아 Spring이 에러 로그를 안 남김(나쁜 패턴). → 핸들러에 `@Slf4j` 로깅 추가.
+  - **[원인2]** 진짜 원인은 `HttpMessageNotReadableException: Invalid UTF-8 byte 0xd7`. Windows 셸/curl이 한글 본문을 비-UTF-8로 깨뜨려 전송. **앱이 아니라 테스트 요청 문제.**
+  - **[해결]** ① 핸들러 로깅 추가로 원인 가시화. ② 한글은 UTF-8 파일로 전송해 검증(201). ③ 깨진/잘못된 JSON은 클라이언트 오류이므로 `HttpMessageNotReadableException` 핸들러를 추가해 500→**400**으로 교정.
+  - **[교훈]** 500을 조용히 삼키지 말고 항상 로깅할 것. 잘못된 요청 본문은 400이 맞다. Windows 셸에서 한글 API 테스트 시 인코딩 주의.
+- **[증상]** 서버 재시작 시 새 코드가 반영 안 됨(옛 응답).
+  - **[원인]** `TaskStop`이 Gradle 태스크는 멈추지만 자식 java 프로세스가 8080을 계속 점유 → 새 인스턴스가 포트 충돌로 실패하고 옛 서버에 요청이 감.
+  - **[해결]** 포트 8080 점유 PID를 찾아(`Get-NetTCPConnection`) 강제 종료 후 재시작.
+  - **[교훈]** bootRun 재시작 전 8080 리스너를 반드시 정리.
+
+---
+
+## 2026-06-02 (2일차) — member 테스트 작성
+
+### 추가
+- **MemberServiceTest** (단위 테스트, Mockito): 가입 성공 / 이메일 중복 예외 / 조회 성공 / 없는 회원 예외 — 4개.
+  - `@ExtendWith(MockitoExtension)` + `@Mock` Repository + `@InjectMocks` Service. given-when-then 구조.
+- **MemberControllerTest** (`@WebMvcTest` + MockMvc): 가입 201(+password 미노출) / 검증 400 / 조회 200 / 없는 회원 404 — 4개.
+  - 서비스는 `@MockitoBean`으로 대체. 전역예외처리(@RestControllerAdvice)도 슬라이스에 포함돼 400/404 검증됨.
+- 결과: 전체 9개 테스트 통과 (contextLoads 1 + Service 4 + Controller 4), 실패 0.
+
+### 결정
+- **테스트 범위: Service 단위 + Controller 슬라이스**. Repository(@DataJpaTest)는 다음에. 테스트 피라미드의 핵심 두 층 먼저.
+- **`@MockitoBean` 사용** (구 `@MockBean`은 Boot 3.4+에서 deprecated) — 버전에 맞는 최신 API.
+- **id 주입은 `ReflectionTestUtils`**: 엔티티 id가 JPA 자동생성이라 setter가 없으므로 테스트에서 리플렉션으로 설정.
+
+### 문제 / 해결
+- (특이사항 없음 — 작성한 테스트 모두 1차 통과)
+
+---
+
+## 2026-06-02 (2일차) — Repository 테스트 (이어서)
+
+### 추가
+- **MemberRepositoryTest** (`@DataJpaTest`): existsByEmail true/false / 저장 시 id·createdAt 자동기록 / findById — 4개.
+  - 결과: 전체 **13개** 테스트 통과 (Service 4 + Controller 4 + Repository 4 + contextLoads 1). 테스트 피라미드 3층 완성.
+
+### 결정
+- **`@DataJpaTest`에 `@Import(JpaConfig.class)` 추가**: @DataJpaTest는 임의 @Configuration(@EnableJpaAuditing 포함)을 자동 로딩하지 않으므로, createdAt 자동기록을 검증하려면 명시적으로 import 해야 함.
+
+### 문제 / 해결
+- (특이사항 없음 — 1차 통과. `save_autoFields` 통과로 JPA Auditing 실제 작동 확인.)
+
+---
+
+## 2026-06-02 (2일차) — product 도메인 구현
+
+### 추가
+- **product 도메인 (단순 상품, 등록+조회)**: Product(entity) / ProductStatus(enum) / ProductRepository / ProductCreateRequest·ProductResponse(record) / ProductService / ProductController.
+  - 필드: name, price(long, 원), stock(int), description, status(enum). API: `POST /api/products`(201), `GET /api/products/{id}`(200).
+  - 빌드 성공, product 테이블 정상 생성, 기존 13개 테스트 회귀 없음.
+- architecture.md·add-domain skill에 **도메인 간 연관관계 방침** 명문화.
+
+### 결정 (설계 분석 후)
+- **가격 타입 = `long`(원 단위 정수)**: KRW는 소수점 없음. 부동소수점(double/float)은 오차로 금지. (다통화/소수점 필요 시 BigDecimal로 전환)
+- **상품 상태 = enum + `@Enumerated(STRING)`**: ORDINAL은 순서 변경 시 데이터 깨짐. 상품은 주문이 참조하므로 **물리 삭제 대신 상태(DISCONTINUED)로 관리**.
+- **도메인 간 연관관계 = 애그리거트 간 ID 참조**: 주문/장바구니는 `Long productId`로 상품을 참조(객체 연관 X). 결합도↓·애그리거트 경계 명확(DDD)·N+1 회피·MSA 전환 용이. 애그리거트 내부(상품↔옵션)에서만 객체 연관 허용.
+  - 기록 위치도 하네스 원칙대로 분리: 근거=architecture.md, 실행 규칙=add-domain skill (CLAUDE.md는 짧게 유지).
+- **첫 product는 단순 스코프**: 옵션(사이즈/색상)·재고 동시성·브랜드/카테고리는 후속 단계로 분리해 점진적 학습.
+
+### 문제 / 해결
+- (특이사항 없음 — 컴파일·빌드 1차 통과. 동작 검증은 다음 단계에서 product 테스트로 진행 예정.)
+
+---
+
+## 2026-06-02 (2일차) — product 테스트 작성
+
+### 추가
+- **ProductServiceTest** (Mockito, 3): 등록 성공(ON_SALE) / 조회 성공 / 없는 상품 예외.
+- **ProductControllerTest** (@WebMvcTest, 4): 등록 201 / 검증 400 / 조회 200 / 없는 상품 404.
+- **ProductRepositoryTest** (@DataJpaTest, 3): id·createdAt 자동기록 / 전체 필드 round-trip(enum 포함) / 없는 id 빈 Optional.
+- 결과: 전체 **23개** 테스트 통과 (member 13 + product 10), 실패 0.
+
+### 결정
+- product는 유니크 제약이 없어 member의 "이메일 중복" 같은 테스트 대신, **enum 상태 round-trip 검증**(`save_persistsAllFields`)으로 `@Enumerated(STRING)` 매핑이 실제로 저장·복원되는지 확인.
+
+### 문제 / 해결
+- (특이사항 없음 — 1차 통과.)
+
+---
+
+## 2026-06-02 (2일차) — order 도메인 (구현 + 테스트)
+
+### 추가
+- **Product에 재고 메서드**: `decreaseStock`(부족 시 예외) / `increaseStock`. 동시성은 TODO(낙관/비관 락).
+- **order 도메인 (생성+조회+취소)**: Order(루트, table `orders`) / OrderItem / OrderStatus(enum) / OrderRepository / OrderCreateRequest(중첩 OrderItemRequest) / OrderResponse / OrderService / OrderController.
+  - API: `POST /api/orders`(201) / `GET /api/orders/{id}`(200) / `POST /api/orders/{id}/cancel`(200).
+- **테스트 13개**: Service 6 / Controller 5 / Repository 2. 전체 36개 통과.
+
+### 결정
+- **OrderItem에 productName·orderPrice 스냅샷**: 주문은 불변 이력 → 상품 가격이 바뀌어도 주문 내역 보존. (cart의 라이브 참조와 대비)
+- **Order 테이블명 `orders`**: `ORDER`는 SQL 예약어.
+- **재고 차감/복원은 Product 엔티티의 메서드**로 (도메인 모델에 행위를 둠). 주문 생성/취소는 `@Transactional`로 원자적 처리(실패 시 재고도 롤백).
+- 동시성은 **단순 차감 + TODO**: 학습 흐름 우선, 락은 후속 마일스톤.
+
+### 문제 / 해결
+- (특이사항 없음.) Repository 테스트에서 `em.flush()/clear()` 후 재조회로 **cascade 저장이 DB까지 반영**됨을 검증.
+
+---
+
+## 2026-06-02 (2일차) — cart 도메인 (구현 + 테스트)
+
+### 추가
+- **cart 도메인 (담기+조회+제거)**: Cart(루트, memberId unique) / CartItem / CartRepository(findByMemberId) / CartItemAddRequest / CartResponse / CartService / CartController.
+  - API: `POST /api/carts/{memberId}/items` / `GET /api/carts/{memberId}` / `DELETE /api/carts/{memberId}/items/{productId}`.
+- **테스트 12개**: Service 6 / Controller 4 / Repository 2. **전체 48개 통과.**
+
+### 결정
+- **cart는 스냅샷하지 않고 라이브 참조**: 조회 시 현재 상품 정보(이름/가격)를 채움. order(스냅샷)와의 핵심 대비.
+- **조회 enrich는 `findAllById`로 일괄 조회**(N+1 회피). 우리 ID참조 방침("필요 시 명시적 조회")의 실제 적용 예.
+- 같은 상품 재담기 → **수량 증가**(중복 항목 방지). 회원당 장바구니 1개(memberId unique).
+
+### 문제 / 해결
+- (특이사항 없음 — 1차 통과.)
+
+---
+
+## 2026-06-02 (2일차) — MySQL 전환 (Docker)
+
+### 추가
+- **docker-compose.yml**: MySQL 8.0 컨테이너 (DB `commerce`, utf8mb4, healthcheck, named volume로 데이터 영속).
+- **설정 분리**: `src/main/resources/application.yml` → MySQL 연결 / `src/test/resources/application.yml` → H2. 테스트는 MySQL 없이 독립 실행.
+- CLAUDE.md 명령어에 `docker compose up -d` 추가.
+- 검증: `docker compose up` → bootRun이 MySQL 8.0.46에 연결(HikariPool, com.mysql.cj.jdbc), 상품 등록·조회 정상. **MySQL을 내린 상태에서도 48개 테스트 전부 통과**(= 테스트/운영 DB 분리 확인).
+
+### 결정
+- **DB 실행은 Docker**(네이티브 설치 X): 설치 불필요·격리·정리 용이, docker-compose.yml로 환경을 코드화(포트폴리오 이점).
+- **테스트는 H2 유지**: `@SpringBootTest`가 MySQL에 묶이지 않도록 test 리소스에 H2 분리. (실무/CI 표준)
+- `ddl-auto: update`(로컬 학습용). 운영은 마이그레이션 도구(Flyway/Liquibase) 사용해야 함 — TODO.
+
+### 문제 / 해결
+- **[증상]** `docker compose up` 시 `bind: ... 3306` 포트 충돌로 컨테이너 기동 실패.
+  - **[원인]** 이 PC에 **네이티브 MySQL(mysqld)이 이미 3306 점유** 중.
+  - **[해결]** 컨테이너 host 포트를 **3307**로 매핑(`3307:3306`), app `url`도 3307로. 기존 네이티브 MySQL은 건드리지 않음.
+  - **[교훈]** 포트 충돌 시 호스트 포트만 바꿔 매핑하면 기존 서비스와 공존 가능. 컨테이너 내부 포트는 그대로.
+
+---
+
+## 2026-06-02 (2일차) — API 문서화 (Swagger / springdoc-openapi)
+
+### 추가
+- 의존성 `org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6` (Boot 3 표준).
+- **OpenApiConfig**: OpenAPI Bean으로 문서 제목/설명/버전 설정.
+- 컨트롤러 4개에 `@Tag`/`@Operation`, 요청 DTO 4개에 `@Schema`(설명+예시) 추가.
+- 검증: `/v3/api-docs`에 4개 태그·10개 엔드포인트 자동 생성, `/swagger-ui/index.html` 200. 빌드/테스트 48개 회귀 없음.
+  - 문서: http://localhost:8080/swagger-ui/index.html
+
+### 결정
+- **springfox 금지, springdoc 사용**: springfox는 Spring Boot 3 미지원(개발 중단). Boot 3은 springdoc-openapi가 표준.
+- 문서화 깊이: 어노테이션으로 풍부하게(@Tag/@Operation/@Schema) — "Try it out" 입력폼에 예시값 제공.
+- TODO: Security 도입 시 `/swagger-ui/**`, `/v3/api-docs/**`를 인증 예외로 허용해야 함.
+
+### 문제 / 해결
+- (특이사항 없음 — 1차 통과.)
+
+---
+
+## 2026-06-02 (2일차) — 인증 Phase 1 (Spring Security + JWT 액세스 토큰 + 역할)
+
+### 추가
+- 의존성: `spring-boot-starter-security`, `jjwt 0.12.6`(api/impl/jackson), (test) `spring-security-test`. application.yml에 jwt secret/만료시간.
+- Member에 `Role`(USER/ADMIN) 추가, 회원가입 시 **비밀번호 BCrypt 해싱**(PasswordEncoder), 기본 권한 USER.
+- `global/security`: **JwtTokenProvider**(발급/검증), **JwtAuthenticationFilter**(Bearer 토큰 → SecurityContext, principal=memberId), **SecurityConfig**(STATELESS + 경로 인가), **SecurityUtil**(현재 회원 ID).
+- `auth` 도메인: **로그인 API**(`POST /api/auth/login`) → 액세스 토큰 발급.
+- **Order/Cart의 memberId 제거 → 로그인 사용자에서 추출**(SecurityUtil). Cart 경로에서 `{memberId}` 제거.
+- 경로 인가: 회원가입·로그인·Swagger·상품조회 공개 / 상품등록 ADMIN / 주문·장바구니 인증.
+- 테스트: 컨트롤러 테스트에 `@AutoConfigureMockMvc(addFilters=false)` + (주문/장바구니) SecurityContext 주입. AuthService/AuthController 테스트 추가. **전체 53개 통과.**
+- 런타임 검증: 미인증 보호 API 403 / 로그인 후 토큰으로 200(memberId는 토큰에서 추출) / USER의 상품등록 403 / 공개 상품조회 404.
+
+### 결정
+- **세션 대신 JWT(STATELESS)**: REST API·확장성에 적합.
+- **principal = memberId(Long)**: 컨트롤러는 SecurityUtil로 현재 회원 ID 사용 → memberId 위변조 불가, 테스트도 SecurityContext 주입으로 용이.
+- **비밀번호 실패 메시지는 "이메일 또는 비밀번호가 올바르지 않습니다"로 통일**: 계정 존재 여부 노출 방지.
+- 컨트롤러 슬라이스 테스트는 보안 필터를 끄고(addFilters=false) 컨트롤러 로직에 집중. 실제 인가 동작은 런타임으로 검증.
+- TODO: secret을 환경변수/시크릿 매니저로(운영). 인증 실패 시 401 진입점(EntryPoint) 커스터마이즈는 후속.
+
+### 문제 / 해결
+- **[증상]** 기존 48개 테스트가 보안 도입 후 컨트롤러에서 403/401 위험.
+  - **[원인]** Security 도입 시 @WebMvcTest에 기본 보안 필터가 적용됨.
+  - **[해결]** 컨트롤러 슬라이스에 `addFilters=false`, memberId가 필요한 컨트롤러는 SecurityContext를 직접 주입.
+  - **[교훈]** 슬라이스 테스트는 보안을 분리하고, 실제 인가는 런타임/통합으로 검증하는 게 깔끔.
+
+### 다음 (Phase 2)
+- Refresh 토큰: 저장(DB)·재발급(`/api/auth/refresh`)·회전(rotation), TokenResponse에 refreshToken 추가.
+
+---
+
+## 2026-06-02 (2일차) — 인증 Phase 2 (Refresh 토큰)
+
+### 분석 (사용자 질문: BCrypt + rainbow table / salt / IV / DB 변경?)
+- **BCrypt는 패스워드마다 랜덤 salt를 내장**(`$2a$10$<22자 salt><해시>`)하므로 rainbow table이 이미 방어됨. **별도 salt 컬럼·DB 변경 불필요.**
+- **IV는 암호화(양방향, AES) 개념** — 단방향 해싱인 비밀번호엔 해당 없음.
+- 정당한 "추가"는 salt/IV가 아니라 **pepper**(앱 시크릿, DB 밖) 또는 cost factor 상향. (이번엔 미적용)
+- 실제 DB 해시 확인으로 증명. 발견된 **평문 alice 레코드(BCrypt 이전 생성)**는 삭제 후 ADMIN으로 재생성.
+
+### 추가
+- **RefreshToken** 엔티티(memberId unique, token) + Repository → **DB 저장**(회전·폐기 통제). ※ 비밀번호와 달리 refresh 저장은 정당한 DB 추가.
+- TokenResponse에 `refreshToken` 추가, `TokenRefreshRequest` 추가.
+- AuthService: 로그인 시 refresh 저장, **`refresh()`**(검증→저장본 일치 확인→새 토큰 발급+회전).
+- AuthController: `POST /api/auth/refresh`.
+- 테스트 추가(로그인/재발급/회전/재사용거부) → **전체 58개 통과.**
+- 런타임 검증: 회전(새≠옛) / 옛 refresh 재사용 401 / 새 refresh 200 / ADMIN 계정으로 상품등록 201.
+
+### 결정
+- **리프레시 회전(rotation)**: 재발급 때마다 새 refresh 발급+저장본 교체. 이전 토큰은 무효 → 탈취 재사용 방어.
+- 저장본과 불일치하는 refresh는 거부(재사용/폐기 탐지).
+
+### 문제 / 해결
+- **[증상]** 회전했는데 새 refresh가 옛 것과 동일하고, 옛 토큰 재사용이 막히지 않음(런타임에서만 발견, 단위테스트는 mock이라 통과).
+  - **[원인]** JWT `iat`/`exp`는 **초 단위**. 로그인과 즉시 refresh가 같은 초에 일어나면 (sub+iat+exp 동일 →) 토큰 문자열이 byte-identical.
+  - **[해결]** 토큰에 **고유 `jti`(UUID)** 클레임 추가 → 매 발급마다 다른 토큰. 회전·재사용 탐지 정상화.
+  - **[교훈]** JWT 시간 클레임은 초 단위라 유일성 보장 안 됨. 유일성이 필요하면 jti를 넣어야. 단위테스트(mock)로는 못 잡고 런타임 검증에서 드러남.
+
+---
+
+## 2026-06-02 (2일차) — 모노레포 재구조 (backend / frontend)
+
+### 추가
+- 향후 프론트엔드 분리를 위해 **모노레포** 채택: 루트에 `backend/`(현 Spring Boot 전부 이동) + `frontend/`(placeholder) 생성.
+- `docs/` · `CLAUDE.md` · `.claude/`(skills·settings·hook)는 **프로젝트 공통**으로 루트 유지.
+- 빌드 산출물(`build/`, `.gradle/`)은 이동 대신 제거(재생성). backend/에서 `./gradlew build` 정상(58개 통과) 확인.
+- CLAUDE.md에 모노레포 구조·"명령은 backend/에서 실행" 명시.
+
+### 결정
+- **모노레포 vs 폴리레포 → 모노레포**: 솔로 포트폴리오에 풀스택을 한 레포로 보여주고 관리 단순. (폴리레포는 팀/배포 분리에 적합하나 오버헤드↑)
+- backend는 자체 완결(`backend/`에 docker-compose 포함). frontend는 백엔드 REST API + Swagger(OpenAPI)를 계약으로 소비.
+
+### 문제 / 해결 · TODO
+- **[하네스 경로]** Stop 훅이 `src`를 보던 것을 `backend/src`로 바꿔야 함 → auto 모드의 settings.json 자기수정 보호로 보류. **사용자 승인 후 반영 예정.**
+- **[FE 착수 시]** 백엔드 `SecurityConfig`에 **CORS 허용**(프론트 dev 서버 origin) 추가 필요.
+- **[git]** 아직 git 레포 아님 → 추후 `git init` + 루트 `.gitignore` 정비(포트폴리오=GitHub).
+
+---
+
+## 2026-06-02 (2일차) — 폴더 정리 + 재고 동시성(@Version 낙관적 락)
+
+### 추가 (정리)
+- 루트 stray `.gradle/` 삭제(루트는 gradle 프로젝트 아님), 모노레포용 루트 `.gitignore` 추가.
+- Stop 훅 경로 `src` → `backend/src`로 갱신(사용자 승인) + 3분기 검증 완료.
+
+### 추가 (동시성)
+- 의존성: `spring-retry` + `spring-boot-starter-aop`, 메인에 `@EnableRetry`.
+- Product에 `@Version`(낙관적 락) 추가.
+- **OrderProcessor**(@Transactional `place`) 분리 + **OrderService.create**는 `@Retryable`(OptimisticLockingFailureException, 3회, backoff 100ms)로 위임.
+- 테스트 재배치: 생성 로직 → `OrderProcessorTest`, OrderService엔 cancel/getOrder. **OrderConcurrencyTest**(@SpringBootTest, 20스레드×재고10) 추가.
+- 결과: 전체 **59개 통과**. 동시성 테스트로 초과판매 0 증명.
+
+### 결정
+- **충돌 처리 = 재시도(spring-retry)**: 초과판매는 @Version이 막고, 재시도는 정당한 주문이 충돌로 실패하지 않게 하는 UX 보강.
+- **재시도와 트랜잭션 빈 분리**: 낙관적 락 예외는 커밋 시점 발생 → 같은 트랜잭션 내 재시도 불가. `@Retryable`(OrderService, 트랜잭션 없음) → `@Transactional`(OrderProcessor) 위임으로 **재시도마다 새 트랜잭션** 보장.
+- **동시성 테스트는 불변식으로 단정**: maxAttempts(3) 고정이라 "정확히 N개 성공"은 경합에 따라 흔들릴 수 있음 → ①성공≤재고 ②재고≥0 ③성공=차감량(lost update 없음)으로 비flaky 검증.
+
+### 문제 / 해결
+- **[설계 함정]** `@Retryable`+`@Transactional`을 같은 메서드에 두면 어드바이스 순서에 따라 "같은(이미 깨진) 트랜잭션 재시도"가 될 수 있음.
+  - **[해결]** 트랜잭션 워커(OrderProcessor)를 별도 빈으로 분리 → 재시도가 항상 새 트랜잭션을 연다.
+  - **[교훈]** 낙관적 락 재시도는 반드시 트랜잭션 **바깥**에서. "retry wraps a fresh transaction".
+
+---
+
+## 2026-06-02 (2일차) — 통합 시나리오 테스트
+
+### 추가
+- **CommerceScenarioTest** (`@SpringBootTest` + MockMvc, 보안 필터 ON, 실제 JWT): 전 구매 흐름을 한 번에 검증.
+  - ADMIN 시드→로그인→상품등록(201) → USER 가입(201)→로그인 → (무인증 주문 4xx) → 주문(201, 총액·스냅샷) → 재고 10→7 확인 → 주문조회(ORDERED) → 취소(CANCELLED) → 재고 7→10 복원 → 장바구니 담기·조회(enrich).
+  - 응답 JSON에서 토큰/ID를 ObjectMapper로 추출해 다음 요청에 사용(실제 E2E).
+  - 결과: 전체 **60개** 테스트 통과.
+
+### 결정
+- 통합 테스트는 **보안 필터를 켜고 실제 JWT**로 호출(컨트롤러 슬라이스 테스트가 addFilters=false인 것과 대비) → 인증·인가까지 포함한 전 스택 검증.
+- 테스트 DB는 H2(휘발). **실제 MySQL 데이터 확인은 `bootRun`(MySQL) + API 호출 후** `docker exec ... mysql` 또는 GUI(localhost:3307)로 조회.
+
+### 문제 / 해결
+- (특이사항 없음 — 1차 통과.)
+
+---
+
+## 2026-06-02 (2일차) — 상품 목록 + 페이징 (GET /api/products)
+
+### 추가
+- **공통 `PageResponse<T>`** (global/common): content + 페이지 메타(page·size·totalElements·totalPages·hasNext)만 추린 응답 record. `Page<T>` → `PageResponse.from(page)`.
+- **`ProductRepository.findByStatusIn(Collection<ProductStatus>, Pageable)`**: 메서드 이름 규칙으로 `WHERE status IN (...)` 쿼리 자동 생성.
+- **`ProductService.getProducts(Pageable)`**: 가시 상태(`VISIBLE_STATUSES` = ON_SALE·SOLD_OUT)만 조회 → `.map(ProductResponse::from)` → `PageResponse`로 변환.
+- **`GET /api/products`** (공개): `@PageableDefault(size=20, sort="createdAt", DESC)` + `@ParameterObject`(springdoc, Swagger에서 page/size/sort 개별 칸). 클라이언트가 `?page=&size=&sort=price,asc`로 오버라이드 가능.
+- 테스트 4개: Service 1(가시상태만 조회·DTO매핑·메타) / Repository 2(DISCONTINUED 제외 필터 · 페이징 totalPages·hasNext) / Controller 1(200·메타 JSON + 기본정렬 적용 캡처 검증). **전체 64개 통과** (60→64).
+
+### 결정 (설계 분석 후 — 사용자와 합의)
+- **응답 형태 = 커스텀 `PageResponse<T>`** (Spring `Page` 직접 노출 X): Boot 3.x는 `PageImpl` 직접 직렬화에 "향후 구조 변경 가능" 경고 + 내부 구조(pageable/sort) 노출. API 계약을 우리가 통제. (.NET의 `PagedResult<T>` DTO와 동일 역할)
+- **기본 정렬 = createdAt DESC · size 20**: 무신사식 "신상품" 최신순. 의미가 명확한 createdAt 채택(id DESC 대비). 정렬/크기는 파라미터로 변경.
+- **공개 목록 필터 = ON_SALE + SOLD_OUT** (DISCONTINUED 제외): 품절은 노출하되 판매중지만 숨기는 실제 커머스 동작. `findByStatusIn`으로 구현(단일 상태였다면 `findByStatus`).
+- **보안 변경 불필요**: `GET /api/products/**`가 이미 permitAll. Spring 6 `PathPattern`에서 `/**`는 0세그먼트도 매칭 → 컬렉션 `GET /api/products`도 공개.
+
+### 문제 / 해결
+- (특이사항 없음 — 컴파일·테스트 1차 통과.) `@WebMvcTest` 슬라이스에 `SpringDataWebAutoConfiguration`이 포함돼 `@PageableDefault`/`Pageable` 인자 해석이 그대로 동작함을 컨트롤러 테스트(기본 Pageable 캡처)로 확인. 실제 쿼리 로그에 `... where status in (?, ?) order by created_at desc fetch first ? rows only` 확인.
+- **[교훈]** `Page.map(fn)`은 메타(총 개수·페이지 수)를 보존한 채 content만 변환. 변환을 서비스에서 끝내고 컨트롤러는 `PageResponse`만 반환하면 계층 책임이 깔끔.
+
+---
+
+## 2026-06-03 (3일차) — 상품 목록 런타임 검증 + 🚨 MySQL 랜섬웨어 사고·복구
+
+### 검증 (런타임, PASS)
+- MySQL(Docker) + `bootRun` 후 `GET /api/products`를 실제 호출해 확인:
+  - **기본**: size=20, createdAt desc, `totalElements=6`, `totalPages=1`, `hasNext=false`. content 순서 P07→P01(최신순).
+  - **페이징**: `?page=0&size=3` → 3건+`hasNext=true`, `?page=1&size=3` → 다음 3건+`hasNext=false`, `totalPages=2`.
+  - **정렬 오버라이드**: `?sort=price,asc` → 가격 오름차순 정상.
+  - **필터**: DISCONTINUED 상품(P03)은 전 페이지에서 제외, SOLD_OUT(P05)은 노출 — ON_SALE+SOLD_OUT만 보임.
+  - **경계**: `?page=99` → `content=[]`, `hasNext=false` (graceful).
+  - **계약**: 와이어 JSON이 `{success,message,data:{content,page,size,totalElements,totalPages,hasNext}}` — Spring `Page` 내부(pageable/sort/last) 누출 없음.
+  - **DB 증거**: Hibernate 로그에 `where status in (?, ?) order by created_at desc limit ?` + 별도 `count(...)` 쿼리(totalElements).
+- 시드: admin@commerce.com 가입(USER)→SQL로 ADMIN 승격→로그인→상품 7개 등록→2개 상태 조정(SQL).
+
+### 🚨 문제 / 해결 — 랜섬웨어 (로컬 MySQL 침해)
+- **[증상]** `bootRun`이 `Unknown database 'commerce'`로 기동 실패. `SHOW DATABASES`에 `commerce`는 없고 **`RECOVER_YOUR_DATA`** DB가 존재. 내용은 비트코인(0.0122 BTC, addr `bc1q4da6h2l6cdz8vcphnxvn8ssurlvhyqs6ng8m45`, DATAID `2GYKX`) 요구 협박문.
+- **[원인]** 컨테이너 MySQL이 **`0.0.0.0:3307`로 외부 노출** + **약한 비밀번호(`root1234`/`commerce1234`)**. 노출 DB를 자동 스캔·드롭하고 협박문을 남기는 봇 캠페인에 당함. (인증은 통과·DB만 삭제됨)
+- **[해결]** ① **지불 안 함**(이 캠페인은 백업 안 하고 삭제만 — 지불해도 복구 X). ② 침해 **볼륨 자체 폐기**(`docker rm -f` + `volume rm sideprojectweb_commerce-mysql-data`)로 새로 초기화 — 단순히 랜섬 DB만 드롭하는 것보다 안전(공격자가 심었을 계정/트리거까지 제거). ③ root/commerce **비밀번호를 강한 값으로 교체**(docker-compose + healthcheck + application.yml 동기화). ④ 새 컨테이너로 `commerce` DB 정상 생성 확인 후 검증 진행.
+- **[교훈]** 로컬이라도 DB 포트를 `0.0.0.0`에 약한 비번으로 열어두면 자동 공격 대상. 코드 손실은 0(소스·테스트·docs는 파일, MySQL엔 재현 가능한 더미뿐)이라 피해는 경미했지만 경고 신호.
+
+### 결정 / TODO (보안)
+- **[적용]** 비밀번호 교체, 침해 볼륨 폐기. (비번은 아직 yml 하드코딩 — 운영 전 env/시크릿으로 분리 TODO)
+- **[적용]** MySQL 포트를 **`127.0.0.1:3307`로 바인딩** → 외부 네트워크에서 접근 차단(랜섬 노출의 근본 차단). 검증: 3307 리스너가 `127.0.0.1` 단독, 컨테이너 재생성 후에도 앱·Adminer 정상·데이터(상품 7건) 보존. (Adminer는 compose 내부 네트워크로 붙어 영향 없음.)
+- **[점검→해결]** 호스트 **네이티브 MySQL(3306)도 `::`로 노출** 확인. 약한 비번(root1234 등)은 거부됐으나(다른 자격증명) **랜섬 피해 여부 미확인**이었음 → 점검·복구 완료(아래 「호스트 네이티브 MySQL(3306) 점검·복구」 참조): **침해 없음 확정**, root 비번 리셋. (단, 외부 노출 차단은 사용자 판단으로 보류 — 아래 결정 참조.)
+
+### 추가 (DB 뷰어 — Adminer)
+- **Adminer**(`adminer:4.8.1`) 서비스를 docker-compose에 추가. **`127.0.0.1:8081`만 노출**(외부 차단, 랜섬 사고 교훈). 브라우저로 테이블 조회 → **Workbench 설치 불필요.**
+  - 로그인 폼: System=MySQL, Server=`mysql`(서비스명, 같은 compose 네트워크), Username=`commerce`/`root`, DB=`commerce`.
+  - 검증: 웹 HTTP 200 + 컨테이너 PHP로 MySQL 8 `caching_sha2_password` 인증·조회 정상(product 7건).
+- 용도: 공개 목록 API가 숨기는 행(예: DISCONTINUED 상품)까지 raw로 확인 — 일반 흐름(목록→상세)과 보완.
+
+### 추가 (보안) — 호스트 네이티브 MySQL(3306) 점검·복구
+- **상황**: 3306이 `::`(전체 인터페이스)로 리스닝 + Windows 방화벽 인바운드 3306 허용 2건 + `my.ini`에 `bind-address` 없음(기본 `*`). 컨테이너를 털리게 한 것과 **동일한 노출 조건이 네이티브에도** 존재. 게다가 root 비번 분실(Workbench 로그인 불가) 상태.
+- **root 비번 리셋** (MySQL 8.0 `init_file` 기법): 서비스 중지 → `[mysqld]`에 `init_file=...`(파일 내용 `ALTER USER 'root'@'localhost' IDENTIFIED BY ...`) 임시 추가 → `net start`로 **서비스(=Data 폴더 ACL 권한을 가진 계정)** 가 시작 시 실행 → 적용 후 **임시 `init_file` 줄·`mysql-init.txt` 원복·삭제**. (mysqld를 관리자로 *직접* 띄우는 공식 절차는 Data 폴더 ACL이 서비스 계정 전용이라 막힐 수 있어 서비스 경유로 우회.)
+- **침해 점검**: 새 비번으로 `SHOW DATABASES` → **`RECOVER_YOUR_DATA` 없음 = 침해 없음 확정.**
+- **결정 — 외부 노출(`::` + 방화벽)은 의식적으로 보류**: 추후 PC를 서버로 활용할 가능성을 고려해 사용자가 유지 선택. 근거: **강한 비번이 봇 자동공격(약한·기본 비번 표적)은 차단** → 사고 재현 경로는 막힘.
+- **잔여 위험 / TODO**: pre-auth MySQL 취약점·장기 인터넷 직노출은 비번과 무관하게 위험 → ① 서버로 쓸 시점에 `bind-address=127.0.0.1` + 허용 IP/앱 계층으로 한정(되돌리기 30초), ② `'…'@'%'`(원격) 계정에 약한 비번 없는지 점검, ③ MySQL 패치 최신 유지.
+- **교훈**: OS 관리자 권한 ≠ MySQL 인증(서버 내부 계정·비번은 별개). 설정/데이터는 `C:\ProgramData\MySQL\…`(숨김 폴더, `my.ini`·`Data\`), 실행파일은 `C:\Program Files\MySQL\…`(`bin\`) — 두 폴더 혼동 주의.
+
+---
+
+## 2026-06-03 (3일차) — 내 주문 목록 (GET /api/orders)
+
+### 추가
+- **GET /api/orders** (인증 사용자 본인 주문 페이지 조회). 상품 목록과 동일한 페이징 파이프라인 재사용:
+  - `OrderController.getMyOrders`: `@PageableDefault(size=20, sort="createdAt", DESC)` + `@ParameterObject`, 주문자는 `SecurityUtil.getCurrentMemberId()` → **본인 주문만** 조회(권한 자연 분리).
+  - `OrderService.getMyOrders(memberId, pageable)`: `findByMemberId(...).map(OrderResponse::from)` → `PageResponse.from`, `@Transactional(readOnly=true)`.
+  - `OrderRepository.findByMemberId(Long, Pageable)`: 메서드명 파생 쿼리(`where member_id = ?`).
+- 응답 형태는 기존 `OrderResponse`(항목 전체 포함) 재사용 — 별도 요약 DTO는 두지 않음.
+- 테스트 4개: Repository 2(본인 주문만 필터 · 페이징 totalPages/hasNext) / Service 1(Page→PageResponse 매핑) / Controller 1(200·메타 JSON + 기본 Pageable·현재 회원 캡처 검증). **전체 68개 통과**(64→68).
+
+### 결정 (설계 합의 후)
+- **목록도 `OrderResponse` 재사용 + 배치페치** (요약 DTO 대신): 코드·패턴 재사용 극대화 + N+1 정석 대응 학습. 실제 커머스식 요약 DTO("대표상품 외 N건")는 후속 선택지로 남김.
+- **N+1 대응 = `hibernate.default_batch_fetch_size: 100`** (운영·테스트 yml 양쪽): 목록 N건의 지연 `orderItems` 로딩을 `where order_id in (?, …)` 한두 방으로 묶음. **컬렉션 fetch join + 페이징은 금지**(Hibernate가 메모리 페이징 → 위험). 전역 설정이라 다른 지연 로딩도 함께 개선.
+- **보안 변경 불필요**: `/api/orders`는 SecurityConfig의 `anyRequest().authenticated()`에 걸려 이미 인증 필요. (상품 목록은 permitAll이라 반대 케이스였음.)
+
+### 문제 / 해결
+- (특이사항 없음 — 컴파일·테스트 1차 통과.)
+- **(후속 TODO 발견)** 기존 `GET /api/orders/{id}`는 소유자 검증이 없어 인증된 누구나 임의 주문 ID를 조회 가능(IDOR 소지). 이번 목록은 memberId 필터라 안전. 단건 소유자 체크는 후속 과제로 기록.
+
+---
+
+## 2026-06-03 (3일차) — 주문 접근 권한(IDOR) 보강
+
+### 문제 / 해결 — IDOR (남의 주문 조회·취소)
+- **[증상]** `GET /api/orders/{id}`·`POST /api/orders/{id}/cancel`이 소유자 검증 없이 주문 ID만으로 동작 → 인증된 사용자가 **남의 주문을 조회·취소**(재고까지 복원) 가능. (IDOR: Insecure Direct Object Reference)
+- **[해결]** 본인 주문이거나 ADMIN일 때만 허용, 아니면 **403**:
+  - `SecurityUtil.isAdmin()` 추가(권한 `ROLE_ADMIN` 보유 여부).
+  - 컨트롤러가 `getCurrentMemberId()`+`isAdmin()`을 서비스에 전달(기존 패턴 — 서비스는 SecurityContext 비의존).
+  - `OrderService.getOrder/cancel(id, requesterId, admin)`로 시그니처 변경 + 공통 `findOwnedOrder`에서 소유자/ADMIN 검증.
+- 테스트 5개 추가: Service 4(본인 조회 성공 · 남의 조회 403 · ADMIN은 남의 것도 조회 · 남의 취소 403+상태 불변) / Controller 1(403 응답). 기존 호출부(조회/취소) 시그니처도 갱신. **전체 73개 통과**(68→73).
+
+### 결정
+- **응답 코드 = 403 Forbidden** (인증은 됐으나 권한 없음). 존재 자체를 숨기는 **404 하드닝**도 가능하나, 의미 명확성을 우선해 403 채택(전환은 한 줄).
+- **권한 판정은 서비스 계층**(컨트롤러가 값만 전달): 단위 테스트에서 SecurityContext 없이 (requesterId, admin)으로 직접 검증 가능 → 테스트 용이.
+- 통합 시나리오(USER가 본인 주문 조회·취소)는 소유자라 영향 없음 — 그대로 통과.
+
+---
+
+## 2026-06-03 (3일차) — 기술 비교 슬라이드 파이프라인 (Markdown → PPTX)
+
+### 추가
+- **`docs/slides/` 파이프라인**: 비교/기술 의사결정 내용을 마크다운으로 쓰고 → `build_slides.py`(python-pptx)가 **네이티브 편집 가능한 .pptx** 생성. 반복 생성·버전관리 용이.
+  - `build_slides.py`: 작은 마크다운 부분집합 파서 + 렌더러(타이틀/`##`슬라이드/`###`리드/불릿/표/코드블록/노트/인라인 `**굵게**`·`` `코드` ``). 사용법 `python docs/slides/build_slides.py <md> [pptx]`.
+  - `README.md`: 문법·사용법 정리.
+- **첫 덱 `spec-vs-querydsl.md` → `.pptx`(8슬라이드)**: 문제→두 후보 비교표→Specification 코드→QueryDSL 코드→.NET(LINQ) 전이 관점→한국 시장(QueryDSL vs MyBatis)→결정 기준.
+- 의존성: `pip install python-pptx`(문서/도구용 — Spring 앱 빌드와 무관).
+
+### 결정
+- **방식 = 마크다운→PPTX 생성기** (Marp·수작업 대비): 내용은 md로 쌓고 스크립트가 찍어내 "비교가 늘 때마다 반복 생성"에 부합 + 네이티브 편집 가능. (Marp `--pptx`는 슬라이드를 이미지로 박아 편집 어려움)
+- 슬라이드는 **발표/면접용으로 간결**(핵심+표 위주). 미세 조정은 PowerPoint에서.
+
+---
+
+## 2026-06-03 (3일차) — 상품 검색/필터 (QueryDSL 도입)
+
+### 추가 (스택 변경 — 사용자 확인 후)
+- **QueryDSL 5.1.0(:jakarta) 도입.** `build.gradle`에 `querydsl-jpa` + 애너테이션 프로세서(`querydsl-apt`, jakarta annotation/persistence) 추가 → 빌드 시 `@Entity`에서 `QProduct` 등 Q클래스 자동 생성.
+- **`QuerydslConfig`**: `JPAQueryFactory` 빈(EntityManager 주입) — 타입 안전 쿼리 진입점.
+- **검색/필터** `GET /api/products`(기존 목록 엔드포인트 확장):
+  - `ProductSearchCondition(keyword, minPrice, maxPrice)` record — 모두 선택적. 컨트롤러에서 `@ParameterObject`로 쿼리 파라미터 바인딩.
+  - 커스텀 리포지토리 `ProductRepositoryCustom` + `ProductRepositoryImpl`(QueryDSL): `BooleanBuilder.and(null 무시)`로 동적 where 조립(가시상태 IN + 선택적 키워드/가격대), `Pageable.Sort`→`OrderSpecifier` 변환, content + count 2쿼리로 `PageImpl` 반환.
+  - 기존 `findByStatusIn`은 `search(...)`가 흡수 → 제거.
+- 테스트: Repo 3(키워드+가시상태 / 가격대 / 빈조건 페이징), Controller 1(검색 파라미터 바인딩) 추가, Service·Controller 기존 목록 테스트는 새 시그니처로 갱신. **전체 75개 통과**(73→75).
+
+### 결정
+- **Specification 대신 QueryDSL** (슬라이드 비교 후): 동적 조건 + 타입 안전·가독성 + .NET(LINQ) 전이 강점 + 한국 시장 수요. 근거는 `docs/slides/spec-vs-querydsl`.
+- **검색은 별도 엔드포인트가 아니라 기존 `GET /api/products` 확장**: 실제 커머스에서 목록=검색/필터. 조건 없으면 기존 목록과 동일 동작.
+- **정책(가시상태)은 서비스, 쿼리 조립은 리포지토리**: 서비스가 `VISIBLE_STATUSES`를 넘기고 Impl은 순수 쿼리 변환기.
+
+### 문제 / 해결
+- **[증상]** QueryDSL 도입 후 **무관한 `@DataJpaTest`들(Cart·Member·Order)이 전부 컨텍스트 로딩 실패**(`NoSuchBeanDefinitionException`).
+  - **[원인]** `@DataJpaTest` 슬라이스는 **모든 리포지토리**를 로드 → QueryDSL 커스텀 조각을 가진 `ProductRepository`가 `JPAQueryFactory` 빈을 요구하는데, 그 슬라이스엔 `QuerydslConfig`가 없었음.
+  - **[해결]** 4개 `@DataJpaTest` 모두 `@Import({JpaConfig.class, QuerydslConfig.class})`로 빈 제공.
+  - **[교훈]** 슬라이스 테스트는 대상만 로드하지 않고 같은 종류(리포지토리)를 다 끌어온다 → 한 리포지토리의 의존성이 전체 슬라이스에 영향.
+
+---
+
+## 2026-06-03 (3일차) — 주문 목록 요약 DTO
+
+### 추가
+- **`OrderSummaryResponse`**(record: id·status·totalPrice·createdAt·**representativeProductName**(첫 항목)·**itemCount**). `from(Order)`가 `orderItems`에서 대표상품명·항목수 계산.
+- `GET /api/orders`가 **요약(OrderSummaryResponse) 페이지**를 반환하도록 변경(전체 항목은 단건 `GET /api/orders/{id}`의 `OrderResponse` 유지).
+- 테스트 갱신: Service `getMyOrders_mapsToSummary`(대표상품명·항목수 검증), Controller `getMyOrders_success`(요약 JSON). **75개 유지**.
+
+### 결정
+- **목록=요약 / 상세=전체** (무신사식): 목록은 가볍게, 클라이언트가 `대표상품명 + "외 (itemCount-1)건"` 렌더.
+- **요약엔 memberId 생략**: "내 주문 목록"이라 항상 본인 → 불필요.
+- 표현 문자열("외 N건")은 서버가 만들지 않고 **raw 필드(대표명+개수)**만 제공 → 표현은 클라이언트.
+
+---
+
+## 2026-06-03 (3일차) — 카테고리·브랜드 도메인 (2a: 도메인 신설)
+
+### 추가 (add-domain 컨벤션)
+- **`category` 도메인**: `Category`(id, name unique, BaseEntity 상속) · `CategoryRepository`(+`existsByName`) · `CategoryResponse`/`CategoryCreateRequest`(@NotBlank) · `CategoryService`(목록·등록, 중복 409) · `CategoryController`(`GET /api/categories` 공개, `POST` ADMIN).
+- **`brand` 도메인**: `Brand` + 동일 구성(`/api/brands`). 두 도메인 대칭.
+- **SecurityConfig**: `GET /api/categories/**`·`/api/brands/**` permitAll, `POST` 둘 다 `hasRole("ADMIN")`.
+- 테스트 12개(도메인별 Service 3 + Controller 3) 추가. **전체 87개 통과**(75→87).
+
+### 결정
+- **연관은 Long FK(ID 참조)** — @ManyToOne 후보였으나 architecture.md §11 "애그리거트 간 객체연관 금지(ID참조만)"와 충돌하여 **컨벤션 일치 선택**. 이름 표시는 Cart식 enrich로 해결 예정(2b). (문서-코드 일관성 우선)
+- 카테고리는 **평면(flat)** — 계층형(상의>티셔츠)은 후속 스트레치.
+- 이름 **중복 등록 방지(409)** — member의 이메일 중복 패턴과 통일.
+
+### 남은 작업 (2b — Product 연관)
+- Product에 `categoryId`·`brandId`(Long, nullable) 추가 → 등록 시 존재 검증, `ProductSearchCondition`에 `categoryId`·`brandId` 필터 추가(QueryDSL), 응답에 카테고리·브랜드 이름 enrich(Cart 패턴).
+
+---
+
+## 2026-06-03 (3일차) — 카테고리·브랜드 ↔ Product 연관 (2b)
+
+### 추가
+- **Product 엔티티**: `categoryId`·`brandId`(Long, nullable) 추가 — 객체연관 아닌 **ID 참조**(architecture.md §11). 빌드 시 `QProduct`에 두 경로 재생성.
+- **상품 등록**: `ProductCreateRequest`에 categoryId·brandId(선택). `ProductService.create`가 `validateRefExists`(CrudRepository 공용)로 **존재 검증**(없는 id → 400), 빌더에 set.
+- **검색 필터 확장**: `ProductSearchCondition`에 categoryId·brandId 추가 → `ProductRepositoryImpl`의 동적 where에 `eqCategory`·`eqBrand`(QueryDSL `product.categoryId.eq(...)`).
+- **응답 enrich**(Cart 패턴): `ProductResponse`에 categoryId·categoryName·brandId·brandName 추가, `of(product, catName, brandName)`. 단건은 findById, 목록은 페이지 내 id 모아 `findAllById` 배치로 이름 채움(N+1 회피).
+- 테스트: Repo `search_byCategory` 추가, ProductService에 `@Mock Category/BrandRepository` + 시그니처 갱신, ProductController 응답 11필드·검색 파라미터(categoryId/brandId) 갱신. **전체 88개 통과**(87→88).
+
+### 결정
+- **이름은 enrich로** (ID참조 유지하면서 응답에 이름 노출) — Cart의 productId→상품정보 enrich와 동일 패턴 재사용. 목록은 batch `findAllById`로 N+1 회피.
+- **검색은 기존 `GET /api/products` 확장** — categoryId/brandId도 같은 `@ParameterObject` 조건에 합류(별도 엔드포인트 X).
+- 참조 id **존재 검증은 400**(BAD_REQUEST) — 클라이언트가 잘못된 id를 보낸 것이므로.
+
+### 문제 / 해결
+- (특이사항 없음 — 컴파일·테스트 1차 통과.) ProductResponse에 필드 추가로 기존 생성자 호출(테스트 3곳)·`ProductSearchCondition` 5필드화에 따른 호출부만 기계적 갱신.
+
+---
+
+## 2026-06-03 (3일차) — 상품 옵션(사이즈) 설계 합의 (구현 전)
+
+### 결정 (사용자와 합의 — 무신사식 분석 후)
+- **옵션 축 = 단일(사이즈).** 색상은 별도 상품(무신사 정체성). 다축(사이즈×색상 SKU 매트릭스)은 일반 이커머스식 — 조합 폭발·복잡도로 제외.
+- **재고는 옵션별**: `ProductOption.stock`. 재고 메서드(`decreaseStock`/`increaseStock`)와 `@Version` 낙관적 락이 Product→ProductOption으로 이동(사이즈=SKU). **Product.stock 제거**(단일 출처=옵션).
+- **ProductOption = Product 애그리거트 내부** `@OneToMany`(cascade ALL, orphanRemoval) — architecture.md 원칙(객체연관은 애그리거트 내부)에 부합(OrderItem↔Order와 동형).
+- **주문/장바구니는 optionId 참조** + size 스냅샷. 주문 요청 `items:[{optionId, quantity}]`.
+- **재고 차감 = Product 루트 경유**: optionId로 Product 애그리거트 로드(이름·가격 스냅샷에 어차피 필요) → 내부 옵션 차감(옵션 `@Version`으로 충돌 감지). 한 번 로드로 해결 + 애그리거트 경계 유지.
+- **기존 데이터 마이그레이션**: 상품마다 옵션 1개("FREE", stock=기존 Product.stock) 시드.
+
+### 구현 페이즈 (한 번에 X)
+- **P1 Product+Option**: ProductOption 엔티티·재고/@Version 이동, 상품 등록/조회에 옵션, 사이즈별 품절, 옵션 동시성 테스트.
+- **P2 Order**: orderItem.optionId+size 스냅샷, OrderProcessor 옵션 차감/복원(루트 경유), 주문/취소.
+- **P3 Cart**: cartItem.optionId + enrich.
+
+### (참고) 무신사 vs 일반 이커머스
+- 무신사(패션): 단일 축(사이즈)·옵션별 재고·가격 동일·색상=별도상품 → 단순.
+- 일반(쿠팡 등): 다축 조합 SKU·옵션별 가격/추가금·임의 옵션명 → 복잡. 우리는 무신사식 채택.
+
+---
+
+## 2026-06-03 (3일차) — 상품 옵션 P1: 재고 모델 옵션 이동 + 주문 컷오버 (통째)
+
+> 합의 시 P1=Product+Option / P2=Order로 나눴으나, **"재고를 옵션으로"와 "주문이 옵션을 가리킴"이 결합**(Product.stock 제거 시 주문이 깨짐)이라 사용자 확인 후 **한 번에 컷오버**(Y안). 단일 재고 출처로 깔끔하게.
+
+### 추가 / 변경
+- **`ProductOption`**(Product 애그리거트 내부 `@OneToMany`, cascade/orphanRemoval): id·size·stock·`@Version`·`decreaseStock`/`increaseStock`/`isSoldOut`. **재고·@Version·재고메서드가 Product→Option으로 이동**, **Product.stock 제거**.
+- **Product**: `@OneToMany options` + `addOption`·`decreaseStock(optionId,qty)`·`increaseStock(optionId,qty)`·`optionSize(optionId)`(루트 경유 위임).
+- **ProductRepository.findByOptionId**(`@Query` join): optionId로 Product 애그리거트 로드(루트 경유 차감용).
+- **DTO**: `ProductOptionResponse`(id·size·stock·soldOut) 신설, `ProductCreateRequest`는 stock→`options:[{size,stock}]`(@NotEmpty·@Valid), `ProductResponse`는 stock→`options` 목록. `ProductService.create`가 옵션 생성·검증.
+- **주문**: `OrderItem`에 `optionId`+`size` 스냅샷, `OrderResponse.OrderItemResponse`에 노출. `OrderCreateRequest` items `{optionId,quantity}`. `OrderProcessor`가 `findByOptionId`→옵션 차감(루트 경유), `OrderService.cancel`도 옵션 재고 복원.
+- 테스트 8개 파일 갱신(stock→options/optionId). **전체 88개 통과**(불변).
+
+### 문제 / 해결
+- **[증상]** OrderConcurrencyTest가 `LazyInitializationException`(Product.options 지연 로딩) 실패.
+  - **[원인]** 재고가 단순 필드→지연 컬렉션(options)으로 바뀌어, 비트랜잭션 테스트 메서드에서 `reloaded.getOptions()` 접근 시 세션이 닫혀 있었음.
+  - **[해결]** 최종 재고 읽기를 `TransactionTemplate`으로 감싸 트랜잭션 안에서 초기화. **동시성 보장은 옵션 @Version으로 정상 동작 확인**(초과 판매 없음).
+
+### 결정 / TODO
+- **재고 차감은 Product 루트 경유**(애그리거트 정석) — `findByOptionId`로 로드, 이름·가격 스냅샷도 같은 로드로 해결.
+- **(런타임 마이그레이션 TODO)** 운영 MySQL의 기존 7개 상품은 옵션이 없어 주문 불가 → 상품마다 옵션 1개("FREE", stock=기존 product.stock 컬럼값) 시드 필요. (product.stock 컬럼은 ddl update가 자동삭제 안 함 — 무해하게 잔존)
+
+---
+
+## 2026-06-03 (3일차) — 상품 옵션 P1 런타임 검증 + 레거시 컬럼 정리 (MySQL 마이그레이션)
+
+> P1은 그동안 H2 테스트(88개)만 통과했고 실제 MySQL에서 한 번도 안 돌렸음. 운영형 DB에서 옵션 주문 흐름을 검증하고, 검증 중 드러난 스키마 부채를 정리. **앱 코드 변경 없음 — DB 마이그레이션 + 런타임 검증만.**
+
+### 검증 (런타임, PASS)
+- **DB 컷오버 자동 반영 확인**: 이 MySQL은 "상품목록 검증(+랜섬복구)" 시점 스키마에 멈춰 있었음(category/brand/product_option 테이블 없음, product에 category_id/brand_id 없음, order_item에 option_id/size 없음). `bootRun` 시 **Hibernate ddl-auto:update가 그 사이 누적된 변경(2b·검색·옵션 P1)을 한 번에 반영** — 세 테이블 생성 + product에 category_id/brand_id 추가 + order_item에 option_id/size 추가. (= 2b 이후 줄곧 MySQL 미적용 상태였음을 확인)
+- **마이그레이션(FREE 옵션 시드)**: 기존 7상품은 옵션이 없어 주문 불가 → 상품마다 옵션 1개 시드. **시드값 출처 = 잔존하던 레거시 `product.stock` 컬럼**(50/30/20/100/10/80/15). `INSERT ... SELECT id,'FREE',stock,0,NOW(6),NOW(6) FROM product WHERE id NOT IN (SELECT product_id FROM product_option)`.
+- **옵션 주문 흐름(기존 상품 P06-Tee, option 6)**: 상세 GET에 옵션 노출(id6·FREE·stock80·soldOut false) → `POST /api/orders {items:[{optionId:6,quantity:3}]}` → **201, total 120000, size "FREE" 스냅샷** → 재고 80→77 → `GET /api/orders/{id}` ORDERED → `cancel` CANCELLED → 재고 77→80 **복원**. 전부 PASS.
+- **음성 경로**: 재고부족(option5 stock10에 qty11) → **409**, 없는 옵션(optionId 999) → **404**.
+- **신규 상품 옵션 등록 경로(레거시 컬럼 정리 후 첫 런타임 검증)**: `POST /api/products`(옵션 M:5/L:3) → **201**, M옵션 주문 qty2 → 재고 5→3. (create-with-options 경로도 그동안 H2로만 검증됐었음)
+
+### 🔴 문제 / 해결 — 레거시 `product.stock` 컬럼이 신규 상품 등록을 깨뜨림
+- **[증상]** 앱과 동일하게 `stock`을 생략한 INSERT가 **`ERROR 1364 (HY000): Field 'stock' doesn't have a default value`**로 실패 → `POST /api/products`가 이 MySQL에서 500 날 상태였음.
+- **[원인]** P1에서 `Product.stock`을 엔티티에서 제거했지만 **ddl-auto:update는 컬럼을 자동 삭제하지 않음**. 레거시 `stock` 컬럼이 `NOT NULL`(기본값 없음)로 잔존 → 앱의 INSERT(stock 미포함)를 MySQL strict mode가 거부. (`product.version`도 `@Version`이 ProductOption으로 내려가며 죽은 컬럼으로 잔존 — nullable이라 insert는 안 깨뜨림)
+- **[원인2 — H2가 못 잡은 이유]** 테스트 DB(H2)는 매번 **현재 엔티티로 새로 생성(create-drop)** → 레거시 stock 컬럼이 애초에 없어 이 불일치를 구조적으로 못 잡음. ⇒ **P1 dev-log의 "(product.stock 컬럼 … 무해하게 잔존)"은 사실과 달랐다.** 런타임 검증의 가치가 정확히 여기서 드러남.
+- **[해결]** 시드 완료(stock값 보존) 후 `ALTER TABLE product DROP COLUMN stock, DROP COLUMN version`(사용자 합의). 이후 신규 상품 등록 201 정상화 확인. product 테이블이 현재 엔티티와 1:1 일치(id·created_at·updated_at·description·name·price·status·brand_id·category_id).
+- **[교훈]** 엔티티 필드를 지워도 `ddl update`는 컬럼을 안 지운다 → **NOT NULL 잔존 컬럼은 insert를 깨뜨릴 수 있다.** H2(create-drop)는 "기존 스키마와의 불일치"를 못 잡으니, 운영형 DB의 런타임 검증이 필수. (운영에선 Flyway/Liquibase로 컬럼 제거를 명시 관리 — ddl update는 로컬 학습 한정.)
+
+### 정리 / 환경
+- **검증은 새 USER `buyer@commerce.com`/`buyerpass1234` 가입으로 진행**(기존 admin BCrypt 비번 미상) — 실제 구매자 흐름 미러링. 신규 상품 등록 검증 시 buyer를 SQL로 ADMIN 임시 승격 → 검증 후 USER 원복(role은 JWT 클레임이라 승격/원복마다 재로그인).
+- **검증 throwaway 데이터 제거**: P08-Verify 상품+옵션, 테스트 주문 2건 삭제 → 최종 상태 = **상품 7개 각 FREE 옵션(원 stock 보존)·주문 0건·회원 admin(ADMIN)/buyer(USER)**.
+- bootRun 종료 + 8080 리스너 정리.
+- **[재확인]** Windows 셸/curl이 한글 본문을 비-UTF-8로 깨뜨려 회원가입 400(닉네임 "바이어") → ASCII 페이로드로 우회(1일차 교훈 재현).
+
+---
+
+## 2026-06-04 (4일차) — 상품 옵션 P3: 장바구니 옵션(사이즈) 반영
+
+> 옵션 P1(재고모델+주문)에 이어 장바구니를 옵션 단위로. 식별 단위를 productId→**optionId**로 바꿔 "같은 상품 다른 사이즈 = 별개 항목"을 지원.
+
+### 추가 / 변경
+- **`CartItem`**: `optionId`(NOT NULL) 추가 — productId·quantity 유지. **OrderItem과 동형**(productId+optionId 보유)이라 장바구니→주문 전환이 자연스럽다.
+- **`Cart`**: `addItem(productId, optionId, quantity)` — **optionId로 dedup**(같은 옵션이면 수량 합산), `removeItem(optionId)`.
+- **DTO**: `CartItemAddRequest` productId→**optionId**. `CartResponse.CartItemResponse`에 **optionId·size·stock·soldOut 추가**(라이브). 제거 경로 `DELETE /api/carts/items/{optionId}`.
+- **`CartService`**: 담기 시 `productRepository.findByOptionId`로 **옵션 존재 검증(없으면 404)** + productId 확보(루트 경유 — 주문과 동일 패턴). **재고는 담기 단계에서 막지 않음**(라이브/위시 성격 — 부족 검증은 주문 시점). enrich는 productId 배치 조회(`findAllById`) 후 **`product.options`에서 옵션을 찾아 size·stock·soldOut을 채움**(`default_batch_fetch_size`로 N+1 회피, 새 리포지토리 불필요). 상품/옵션이 삭제된 경우 "(삭제된 상품/옵션)"·품절 처리.
+- **DB**: cart·cart_item이 비어 있어 `option_id NOT NULL` 컬럼 추가가 안전(마이그레이션 불필요). bootRun 시 ddl update가 자동 추가.
+- 테스트 갱신: CartService 6·CartController 4·CartRepository 2 + CommerceScenario(장바구니 담기 optionId·항목 optionId 검증). **전체 88개 유지**(기존 테스트 수정만).
+
+### 결정 (사용자 합의)
+- **CartItem = optionId + productId**(OrderItem 동형) vs optionId만 → **둘 다 저장**: enrich를 기존 패턴(findAllById by productId)으로 재사용, 옵션이 삭제돼도 상품명은 표시 가능, 새 리포지토리 불필요, 장바구니→주문 전환에 유리.
+- **응답에 size + stock + soldOut(라이브)**: 무신사식 장바구니 UX(품절 사이즈 표시). 옵션을 이미 로딩하므로 추가 비용 거의 없음.
+- **담기 = 옵션 존재만 검증(404), 재고 미차단**: 장바구니는 라이브 참조라 재고 강제는 주문 시점에만(현 cart 정책 유지).
+- **식별/제거 단위 = optionId**: 같은 상품 다른 사이즈는 별개 항목, 같은 옵션은 수량 합산.
+
+### 검증 (런타임, PASS)
+- 다중옵션 상품 P09(M:5, L:0=품절) 임시 등록 후: ① optM 담기 → size M·stock5·soldOut false → ② 같은 옵션 재담기 = **수량 합산**(qty3, 항목 1개) → ③ 같은 상품 **L(품절) 담기 = 별개 항목 + soldOut true**(품절도 담김) → ④ 다른 상품 옵션(P06 FREE) = 3번째 항목 → ⑤ **optionId로 L 제거** → 해당 사이즈만 빠짐 → ⑥ 없는 옵션 담기 **404**. 전부 PASS.
+- 검증 throwaway(P09 상품·옵션, buyer 장바구니) 제거 → 최종 상태 = 상품 7개 각 FREE 옵션·cart 0건·회원 admin(ADMIN)/buyer(USER). bootRun 종료 + 8080 정리.
+
+### 문제 / 해결
+- (특이사항 없음 — 컴파일·테스트 88개·런타임 1차 통과.)
+
+---
+
+## 2026-06-04 (4일차) — 프론트엔드 착수: 스택 결정 + Next.js 스캐폴딩
+
+> 옵션 기능 일단락 후 프론트엔드 시작. 시장·취업·크로스플랫폼 조사로 스택을 정하고 골격 생성까지.
+
+### 결정 (웹 조사 후 사용자 합의)
+- **FE 스택 = React + TypeScript + Next.js** (웹 우선). 근거:
+  - **한국 프론트 채용 압도적 1위**가 React+TS+Next.js (Vue 2순위·틈새, Svelte/Solid는 채용 약함). TS는 2026 사실상 필수.
+  - 사용자가 **C#/.NET 출신** → TS 전환 비용 최저(타입·제네릭·async/await·LINQ류).
+  - **크로스플랫폼(앱)까지 원하면 React 생태계 시너지**: web(Next.js)+app(React Native/Expo) 같은 멘탈모델·코드 재사용. Flutter는 점유율 1위(~46%)지만 Dart 별도 세계라 백엔드+웹+앱 한 줄기 시연엔 불리.
+  - 조사 출처: State of JS 2025(React ~45% 1위), RN vs Flutter 시장/채용(Flutter 46%/RN 35%이나 RN 채용 6배·한국 토스·당근·카카오페이·리디 RN), 한국 잡보드.
+- 세부: **App Router · npm · Tailwind CSS**.
+- **버전 핀 = Next 15.1 + Tailwind v3** (최신 Next 16 / Tailwind v4 회피). **Boot 3.5 핀과 동일 철학** — 강의·블로그·SO 자료가 15/v3 기준이라 풍부·안정. (`create-next-app@latest`가 Next 16/React 19/TW v4를 줬고 생성된 `AGENTS.md`가 "breaking changes" 경고 → 15/v3로 재스캐폴딩.) React 19는 양쪽 동일.
+
+### 추가
+- `create-next-app@15.1`로 `frontend/` 스캐폴딩: **Next 15.1.12 · React 19 · TypeScript · Tailwind v3.4 · App Router · ESLint 9 · src-dir · alias `@/*`**.
+- **dev 서버 기동 검증**: `npm run dev` → http://localhost:3000 **HTTP 200**(Ready 1.7s, 기본 페이지 정상).
+- `frontend/README.md`를 프로젝트용으로 교체(스택·실행·백엔드 연동·CORS 주의·구조 설명).
+- **🔒 보안 패치**: `npm audit`에서 Next 15.1.12의 **critical 권고 다수**(cache poisoning·XSS·DoS·SSRF) 발견 → `npm install next@15 eslint-config-next@15`로 **15.5.19**(여전히 Next 15 핀)로 올려 critical 해소. 남은 moderate 2건은 Next 번들 postcss(빌드타임·신뢰된 CSS만 처리 → 실사용 위험 낮음)로, `audit fix --force`는 Next 16으로 밀어내(핀 위반) **의도적으로 보류**. (랜섬웨어 경험 후 보안 민감 — 사용자 요청으로 패치.) 패치 후 tsc EXIT 0·dev :3000 HTTP 200 재검증.
+
+### 문제 / 해결
+- create-next-app이 기존 `README.md`(플레이스홀더)를 충돌로 거부 → 임시 이동 후 진행, 이후 새 README로 교체.
+- create-next-app이 `frontend/.git`을 새로 생성(nested repo) → **모노레포 단일 repo 위해 제거**(매번).
+- **첫 시도가 Next 16 설치** → 버전 핀 결정 후 재스캐폴딩. 재삭제 시 `Device or resource busy`(Bash 셸 CWD가 frontend + VSCode 파일 잠금) → **디렉터리 rename으로 비켜두고** 재생성 후 정리.
+- create-next-app@15.1이 **Turbopack 사용을 대화형으로 질문** → 비대화형 셸에서 멈춤 → **`--no-turbopack`** 플래그로 webpack(튜토리얼 기본) 고정.
+- **Node 20.10 < 20.19**(ESLint 9 일부 패키지 권장) → `dev`는 무관, `lint`/`build`에서 경고 가능 → **Node 20.19+/22 LTS 업데이트 TODO**.
+
+### 다음 (FE 1차 슬라이스)
+- 백엔드 `SecurityConfig`에 **CORS 허용**(`http://localhost:3000`).
+- **첫 화면 = 상품 목록**(`GET /api/products`는 공개라 인증 불필요) 소비 → FE↔BE 연동 검증.
+- JWT(access+refresh) FE 토큰 전략(httpOnly 쿠키 vs 메모리)은 로그인 화면 작업 시 결정.
+
+---
+
+## 2026-06-04 (4일차) — FE 1차 슬라이스: CORS + 상품 목록 페이지 (FE↔BE 첫 연동)
+
+### 추가 (백엔드)
+- **SecurityConfig CORS 허용**: `corsConfigurationSource` 빈(allowedOrigins=`http://localhost:3000`, methods GET/POST/PUT/PATCH/DELETE/OPTIONS, headers `*`, allowCredentials true, maxAge 3600) + 체인에 `.cors(...)`. preflight(OPTIONS)는 Spring이 자동 허용. TODO(운영): 허용 origin 환경변수 분리.
+
+### 추가 (프론트엔드)
+- `.env.local`(+`.env.example`): `NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`.
+- `src/lib/types.ts`: 백엔드 응답 계약 타입(`ApiResponse`/`PageResponse`/`Product`/`ProductOption`/`ProductStatus`).
+- `src/lib/api.ts`: `apiGet<T>` 헬퍼(공통 응답 언랩, 실패 시 서버 메시지로 throw).
+- `src/app/products/page.tsx`: **클라이언트 컴포넌트**(`use client`) — useEffect로 `GET /api/products` → 카드 그리드(상품명·브랜드·가격·사이즈 옵션, 품절 사이즈 취소선·SOLD_OUT 배지) + 로딩/에러 상태.
+- 홈(`/`)을 상품목록 링크 랜딩으로 교체, `layout` 메타 title=`commerce`.
+
+### 결정
+- **첫 화면 = 클라이언트 fetch**(서버 컴포넌트 아님): 방금 추가한 CORS가 브라우저에서 실제 동작하는지 검증되고, SPA식(로딩/에러) 패턴이 입문에 친숙. SEO 중요한 페이지는 추후 서버 컴포넌트로 전환 학습.
+- API base URL은 `.env.local`(`NEXT_PUBLIC_`)로 분리.
+
+### 검증 (런타임, PASS)
+- **CORS**: GET+Origin → `Access-Control-Allow-Origin: http://localhost:3000`(+credentials); preflight OPTIONS → 200 + Allow-Methods/Headers/Max-Age.
+- **API**: `GET /api/products` totalElements **6**(7개 중 DISCONTINUED P03 제외 = 정책 정상).
+- **FE 라우트**: `/`·`/products` 모두 **HTTP 200**(런타임 컴파일·렌더 에러 없음). backend compile·frontend tsc EXIT 0. (브라우저 시각 확인은 사용자.)
+
+### 문제 / 해결
+- bootRun이 `Unable to determine Dialect without JDBC metadata`로 1차 실패 → **원인: MySQL/Adminer 컨테이너가 Exited(255)**(Docker Desktop 재시작 추정). `docker compose up -d`로 복구(**named volume 영속 — 상품7·옵션7 보존**) 후 정상 기동. **교훈: bootRun 전 `docker ps`로 DB 컨테이너 상태 확인.**
+- **[FE dev] `/`·`/products` 둘 다 500 `Internal Server Error`** → 로그 `ENOENT: ...\.next\routes-manifest.json` / `_document.js`. **원인: `.next` 빌드 캐시 손상** — 포트 정리 중 dev 서버를 `.next` 기록 도중 강제 종료(`Stop-Process -Force`)해 캐시가 반쯤 깨짐. 특정 페이지가 아니라 **전 페이지 500**이 캐시 손상 신호. **해결: 서버 종료 → `.next` 삭제(자동 생성 캐시라 안전) → `npm run dev` 재시작** → `/`·`/products` 200 복구. **교훈: dev 서버는 `Ctrl+C`로 곱게 종료(강제 kill은 `.next` 손상 위험); 이상하면 `.next` 지우고 재시작이 1순위 처방.** 또한 `next dev`는 자식 node 워커를 함께 띄우므로 강제 종료 시 워커가 잔존해 포트/`.next`를 잡을 수 있음 → 정리 확인 필요.
+
+### 다음 (FE 2차)
+- 상품 상세(`/products/[id]`) → 로그인(JWT access+refresh, FE 토큰 전략 결정) → 장바구니/주문 화면.
+
+---
+
+## 2026-06-04 (4일차) — FE 2차: 상품 상세 페이지
+
+### 추가
+- `src/app/products/[id]/page.tsx`: **동적 라우트** 상세(클라이언트 컴포넌트). `useParams()`로 `[id]` 읽어 `GET /api/products/{id}` → 브랜드·상품명·카테고리·가격·설명·SOLD_OUT 배지·**사이즈 옵션(재고/품절)** 표시 + 로딩/에러 + "← 목록으로".
+- 목록 카드를 `<Link href={"/products/{id}"}>`로 감싸 상세로 이동.
+
+### 결정
+- 상세도 **클라이언트 컴포넌트 유지**(목록과 일관·CORS 흐름). 동적 세그먼트는 `useParams()`로 읽음(Next 15 client 표준 — `params` Promise를 `use()`로 푸는 방식 대신 hook).
+
+### 검증 (런타임, PASS)
+- tsc EXIT 0. `/products`·`/products/6`·`/products/999` 모두 200(라우트 셸 렌더). 백엔드 `/api/products/6`→`P06-Tee`, `/api/products/999`→404 `상품을 찾을 수 없습니다`(클라이언트 에러 표시). HMR로 무중단 반영.
+
+### 다음
+- **로그인(JWT access+refresh)** — FE 토큰 보관 전략(httpOnly 쿠키 vs 메모리/localStorage) 결정 + 로그인 폼·인증 상태 관리.
+
+---
+
+## 2026-06-04 (4일차) — 인증 Phase 3: JWT를 httpOnly 쿠키로 (+ 로그인 UI)
+
+> 기존 인증은 토큰을 응답 body로 주고 `Authorization: Bearer` 헤더로 받았음(FE라면 localStorage/메모리 보관 필요). FE 착수에 맞춰 **토큰 보관 위치 전략**을 다시 정하고 httpOnly 쿠키로 전환.
+
+### 결정 (사용자 합의 — 토큰 보관 전략 / "어디에·왜")
+- **JWT(access+refresh)를 httpOnly 쿠키에 보관.** 위협모델 트레이드오프: **XSS**(악성 JS가 토큰 탈취) vs **CSRF**(브라우저가 위조 요청에 쿠키 자동첨부). localStorage=XSS 취약 / httpOnly 쿠키=JS가 못 읽어 XSS 안전하지만 CSRF 노출.
+- 채택: **httpOnly로 XSS 차단 + `SameSite=Lax`로 CSRF 차단**. **access·refresh 둘 다 httpOnly 쿠키**(JS가 토큰을 전혀 안 만짐 — 가장 순수). 근거: 포트폴리오에서 "토큰을 어디 두고 왜"가 핵심 평가 포인트 + 보안 민감(랜섬 경험).
+- 운영 TODO: https 시 `secure=true`, 프론트/API 도메인이 갈리면 `SameSite=None`+CSRF 토큰.
+
+### 추가/변경 (백엔드)
+- **`AuthCookieManager`**: access/refresh 쿠키 생성·삭제(httpOnly·SameSite=Lax·secure(dev=false)·path=`/`·maxAge=토큰 유효기간 access 30분/refresh 14일).
+- **로그인/재발급 → 토큰을 body 대신 `Set-Cookie`로**, 응답 body는 유저정보(`MemberResponse`). `AuthService.login/refresh` → `AuthResult`(토큰문자열+user), `refresh(String)`는 쿠키에서 받은 토큰을 인자로.
+- **`JwtAuthenticationFilter`**: Authorization 헤더 → 없으면 **`access_token` 쿠키**에서 토큰 추출(헤더 폴백 유지 → Swagger·API클라이언트·테스트 호환).
+- **신설 `GET /api/auth/me`**(현재 유저 — httpOnly라 FE가 토큰을 못 읽으니 "누구인지" 확인용 필수 짝꿍), **`POST /api/auth/logout`**(refresh 폐기 + 쿠키 삭제, 멱등).
+- `SecurityConfig`: `/api/auth/login·refresh·logout` permitAll, `/api/auth/me`는 인증 필요. `TokenResponse`·`TokenRefreshRequest` 제거.
+- 테스트: AuthService(AuthResult·logout 폐기검증), AuthController(쿠키 set/clear·/me·**토큰 body 부재 검증**), CommerceScenario(**쿠키 캡처→재전송 E2E**). **전체 90개 통과**(88→90, 로그아웃·/me 테스트 추가).
+
+### 추가 (프론트엔드)
+- `lib/api.ts`: **`credentials:"include"`**(httpOnly 쿠키 송수신 — CORS allowCredentials와 짝) + `apiPost`.
+- `lib/auth.tsx`: `AuthProvider`/`useAuth` — 최초 `GET /me`로 로그인상태 판단, `login()`/`logout()`.
+- `components/Header.tsx`: 로그인상태별 네비(로그인 ↔ "유저님+로그아웃"). `layout`에 `AuthProvider`+`Header`.
+- `app/login/page.tsx`: 로그인 폼(이메일/비번 → login → /products 이동, 에러 표시).
+
+### 검증 (런타임, PASS)
+- 백엔드 curl(쿠키 jar): 로그인 → `Set-Cookie access_token`(Max-Age=1800·HttpOnly·SameSite=Lax)+`refresh_token`(14일·동일), **body는 유저정보만(토큰 없음)**; `/me` 쿠키O→유저·쿠키X→차단; 보호 API(주문목록) 쿠키로 200; 로그아웃 → 두 쿠키 Max-Age=0.
+- FE: tsc 0, `/`·`/login`·`/products` 200. (브라우저 인터랙션 = 사용자 확인)
+
+### 문제 / 결정 (미인증 401 vs 403)
+- 미인증 보호 API는 **403**(401 아님) — httpBasic/formLogin off라 Spring 기본 `Http403ForbiddenEntryPoint`. FE는 `/me` 비2xx를 "미로그인"으로 처리하면 됨. **401 진입점 커스터마이즈 + access 만료 시 자동 refresh 인터셉터는 후속 TODO**(dev-log 인증 Phase1에 이미 적힌 TODO와 연결).
+
+### 다음
+- (FE) 장바구니/주문 화면(인증 필요 — 쿠키 자동 전송). 이후 401 EntryPoint + 자동 refresh 보강.
+
+---
+
+## 2026-06-04 (4일차) — FE: 장바구니 (상세 담기 + 장바구니 페이지)
+
+### 추가
+- **상품 상세**: 사이즈(옵션) **선택 버튼**(품절 비활성·선택 시 강조) + **"장바구니 담기"**(`POST /api/carts/items`). 비로그인 시 `/login`으로 유도, 담기 결과 메시지.
+- **`/cart` 페이지**: `GET /api/carts` 조회 → 항목(상품명·사이즈·수량·소계·품절) + **삭제**(`DELETE` → 갱신된 cart로 교체) + 총수량/총액. 비로그인 시 `/login` 리다이렉트.
+- `lib/api.ts` **`apiDelete`** 추가, `types.ts`에 `Cart`/`CartItem`, `Header`에 "장바구니" 링크(로그인 시).
+
+### 결정
+- **체크아웃(주문하기)·주문 목록은 다음 슬라이스로 분리** — 체크아웃은 "cart→order 변환 + cart 비우기" 흐름이라 백엔드 설계(예: `POST /api/orders/checkout` 트랜잭션)와 함께 고민.
+- 총액은 `CartResponse`에 없어 client에서 `subtotal` 합산(표시는 client 책임 원칙과 일관).
+
+### 검증 (런타임, PASS)
+- tsc 0, `/products/[id]`·`/cart` 200. 쿠키 장바구니 흐름(curl jar): 담기(P06-Tee×2=80,000)→조회(1건)→삭제(0건)→**비로그인 담기 403**.
+
+### 다음
+- 체크아웃 + 주문 목록(`/orders`)·상세·취소.
+
+---
+
+## 2026-06-04 (4일차) — 체크아웃 (장바구니 → 주문, 서버 트랜잭션) [방식 A]
+
+### 결정 (사용자 합의 — 체크아웃 방식 A vs B)
+- **A(서버 `POST /api/orders/checkout`)** 채택. B(FE가 장바구니 항목 모아 기존 주문 API + 개별 삭제) 대비:
+  - **트래픽**: A는 1회 / B는 1+N회(주문+항목별 DELETE) — 모바일·고트래픽에서 A가 견고.
+  - **원자성**: A는 주문생성+재고차감+장바구니비우기가 **한 트랜잭션** → 부분실패(주문됐는데 장바구니 잔존=중복주문) 없음. B는 단계 분리라 위험.
+  - **진실의 원천 = 서버 장바구니**: A는 서버가 자기 장바구니를 읽어 주문 → 위변조 불가. B는 클라가 항목을 보냄.
+  - 쿠폰·합계 등 비즈니스 로직이 서버에 자연스럽게. **기존 `OrderProcessor` 재사용**이라 추가비용 작음.
+
+### 추가/변경 (백엔드)
+- `Cart.clearItems()`. **`OrderProcessor`**: `CartRepository` 주입, **`checkout(memberId)`**(장바구니 읽어 items 변환 → `placeOrder` → `clearItems`, 한 트랜잭션) + place/checkout 공통 `placeOrder` 추출. **`OrderService.checkout`**(@Retryable 낙관락 재시도). **`OrderController` `POST /api/orders/checkout`**(201). 빈 장바구니 400.
+- 테스트: OrderProcessor 2(성공=주문생성+장바구니비움+재고차감 / 빈 장바구니 400), OrderController 1(checkout 201), CommerceScenario 확장(담기→**체크아웃**→장바구니 0건+재고 10→8). **전체 93개**(90→93).
+
+### 추가 (프론트)
+- 장바구니 페이지 **"주문하기"** → `POST /api/orders/checkout` → **완료 화면(주문번호)** + 장바구니 비움. 재고부족(409)/빈 장바구니(400) 에러 인라인 표시. `Order` 타입 추가.
+
+### 검증 (런타임, PASS)
+- 쿠키 curl: **빈 장바구니 체크아웃 → 400**; 담기→**체크아웃 201**(P06×2=80,000)→**장바구니 0건**→재고 차감→취소로 복원.
+- **[정리]** 검증 중 step1이 400 대신 201 → 원인: **사용자가 브라우저로 buyer 장바구니에 담아둔 항목**이 있었음(P07 1개 → 재고 14 발견). 캐노니컬(50/30/20/100/10/80/15)로 복원, orders/carts 0건 정리. (교훈: 런타임 검증 시 사용자 브라우저 테스트로 인한 데이터 오염 가능 → 시작 상태 확인.)
+
+### 다음
+- 주문 목록(`/orders`)·상세·취소 화면.
+
+---
+
+## 2026-06-04 (4일차) — FE: 주문 목록·상세·취소 (구매 흐름 완성)
+
+### 추가
+- **`/orders`**: `GET /api/orders` 요약 목록(주문번호·날짜·status 배지·대표상품명+"외 N건"·총액), 카드→상세 Link, 인증 가드.
+- **`/orders/[id]`**: `GET /api/orders/{id}` 상세(항목 스냅샷·합계·status·날짜) + **ORDERED면 "주문 취소"**(`POST .../cancel`, confirm) → CANCELLED 즉시 반영. 404/403은 에러 UI.
+- Header **"주문내역"** 링크, 장바구니 완료화면에 **"주문 상세 보기"** 링크. `OrderSummary` 타입 추가.
+
+### 검증 (런타임, PASS)
+- tsc 0, `/orders`·`/orders/[id]` 200. 쿠키 E2E: 체크아웃→**목록(요약)**→**상세**→**취소(CANCELLED+재고복원)**→없는 주문 404.
+- **[정리]** 목록에 사용자가 브라우저로 직접 체크아웃한 주문(order 5)이 보임 = FE 체크아웃 정상 동작 증거. 그 흔적으로 재고 드리프트 → **캐노니컬 복원**(50/30/20/100/10/80/15), orders/carts 0건.
+
+### 🎯 이정표 — 구매 전체 흐름 FE 완성
+- **목록 → 상세 → 로그인(httpOnly 쿠키) → 장바구니(담기/삭제) → 체크아웃 → 주문내역/취소** 전 구간 동작. 백엔드 7도메인 + 쿠키 인증 위에 무신사식 구매 루프 완성.
+
+### 다음
+- **프론트 디자인 일괄 폴리시**(사용자 선호: 기능 완성 후 디자인). (+ 보강 후보: 401 EntryPoint+만료 자동 refresh, 목록 페이지네이션, 이미지)
+
+---
+
+## 2026-06-04 (4일차) — 운영 하드닝: 시크릿 env 분리 + Flyway 도입
+
+### 결정 (사용자 합의)
+- **시크릿 로딩 = OS 환경변수(12-factor)** (spring-dotenv 라이브러리 대신). 무의존성·표준·포트폴리오 어필. dev 편의는 `run.ps1`(.env 로드 후 bootRun).
+
+### 추가/변경 — 시크릿 분리
+- **`backend/.env`(gitignore) + `.env.example`(커밋)**: `MYSQL_*`·`JWT_SECRET`. docker-compose는 `.env`를 자동으로 읽어 `${}` 치환, `application.yml`은 `${MYSQL_USER}`/`${MYSQL_PASSWORD}`/`${JWT_SECRET}`(**기본값 없음 = 누락 시 기동 실패**). **`run.ps1`**(.env→OS env→`gradlew bootRun`). 하드코딩 비번/시크릿 전부 제거.
+- ⚠️ `.env`의 `MYSQL_*`는 기존 볼륨 비번과 같아야 함(바꾸면 접속 깨짐) → 기존 값 그대로 이전.
+
+### 추가/변경 — Flyway
+- 의존성 `flyway-core` + `flyway-mysql`. **`db/migration/V1__init.sql`** = 현재 스키마(각 테이블 `SHOW CREATE TABLE` 덤프, FK 의존 순서로 정렬, AUTO_INCREMENT 시작값 제거).
+- `application.yml`: `flyway.enabled`·`baseline-on-migrate: true`·`baseline-version: 1`; **`ddl-auto: update → validate`**(스키마는 Flyway가, Hibernate는 일치 검증만). test `application.yml`: **`flyway.enabled: false`**(H2 create-drop 유지 → 테스트 독립).
+
+### 검증 (런타임, PASS)
+- **시크릿**: env 주입 부팅 → 상품 200·로그인 200·`/me` 정상(`${}` 해석·DB 접속·JWT 서명). 테스트는 OS env 무관(H2 자체설정) → **93개 통과**.
+- **Flyway**: 기존(비어있지 않은) DB를 **V1로 baseline**(스크립트 skip → **데이터 보존**) → Hibernate `validate` **통과** → Started 6.0s. `flyway_schema_history`에 `BASELINE v1`, products=7/options=7 보존.
+
+### 교훈
+- **기존 DB에 Flyway 도입** = `baseline-on-migrate` + V1을 *현 스키마*로(SHOW CREATE TABLE 덤프). 새 DB는 V1 실행, 기존 DB는 baseline 표시(데이터 안전). 이후 스키마 변경은 V2,V3…로. `ddl-auto: validate`가 엔티티↔스키마 불일치를 기동 시 잡아줌.
+
+### 다음 (보강 잔여)
+- 인증 마무리(401 EntryPoint + access 만료 자동 refresh), git init + GitHub.
+
+---
+
+## 2026-06-04 (4일차) — 인증 마무리: 401 EntryPoint + 403 핸들러 + FE 자동 refresh
+
+### 추가/변경 (백엔드)
+- **`JwtAuthenticationEntryPoint`**(미인증 → **401** JSON "인증이 필요합니다") + **`JwtAccessDeniedHandler`**(권한부족 → **403** JSON "접근 권한이 없습니다"). `SecurityConfig.exceptionHandling`으로 연결. (이전엔 httpBasic/formLogin off라 미인증도 403으로 떨어졌음 → 이제 401(미인증)↔403(권한부족) 구분.) 둘 다 필터 단계라 `ObjectMapper`로 `ApiResponse` JSON 직접 작성.
+
+### 추가/변경 (프론트)
+- `lib/api.ts`: **401 응답 시 `/api/auth/refresh` 1회 시도 후 원요청 재시도**(자동 refresh) → access 만료돼도 끊김 없는 UX. `NO_REFRESH`(login/refresh/logout)는 제외해 루프·무의미 refresh 방지(`/me`는 포함 → 만료 세션 자동 복구).
+
+### 검증 (런타임, PASS)
+- 미인증 `GET /api/orders` → **401**("인증이 필요합니다"), USER가 `POST /api/products` → **403**("접근 권한이 없습니다"), 잘못된 access 쿠키 → **401**(500 아님), 유효 refresh 쿠키로 `/refresh` → 200+새 쿠키. 테스트 **93개 유지**(시나리오 미인증 4xx 그대로 통과).
+
+### 다음
+- OAuth2/SSO 대비 **Member(유저 테이블) 로그인 설계 리뷰**(소셜 로그인은 나중에 — 설계/계획부터). + git init+GitHub.
+
+---
+
+## 2026-06-04 (4일차) — OAuth2/SSO 대비 Member 설계 prep (Flyway V2, 첫 실제 마이그레이션)
+
+### 결정 (설계 리뷰 후 사용자 합의)
+- 소셜 로그인(나중 구현) 대비 **유저 모델 prep을 지금 적용**(마침 Flyway 있으니 첫 V2 실습). **단일 테이블 방식**(Member에 provider/providerId — 분리 테이블은 계정연동 필수일 때), **password nullable**(소셜 유저는 로컬 비번 없음).
+- **email 유니크 & 계정연동 정책은 OAuth2 실제 구현 때 확정(보류)** — 자동 연동(이메일 기준)이냐 provider별 별개 계정이냐는 product 결정.
+- **소셜 인증 후에도 우리 JWT(httpOnly 쿠키) 발급** → 현 인증 구조 그대로 재사용. 구현 시 `spring-boot-starter-oauth2-client` + 커스텀 `OAuth2UserService`(provider+sub 추출 → Member find-or-create → JWT 쿠키).
+
+### 추가/변경
+- **`AuthProvider`** enum(GOOGLE/KAKAO/LOCAL/NAVER, **알파벳순**). **`Member`**: `password` nullable, `provider`(@Enumerated STRING, 생성자에서 null→LOCAL 기본), `providerId`(nullable). 기존 빌더 호출부는 provider 미지정→LOCAL이라 **무변경**.
+- **`V2__add_oauth_fields.sql`**: password→NULL, provider enum 추가(`DEFAULT 'LOCAL'`), provider_id varchar(255).
+
+### 검증 (런타임, PASS)
+- 테스트 **93개**. Flyway가 **V2 적용(now at v2)** → Hibernate `validate` 통과 → Started. 기존 회원 `provider=LOCAL` 부여, **로컬 로그인 200**(회귀 없음). `flyway_schema_history`: v1 BASELINE + v2 SQL(success).
+
+### 교훈
+- Hibernate(Boot 3.5)는 `@Enumerated(STRING)`을 **MySQL 네이티브 ENUM**으로 매핑(role·status도 그러함) → 손수 쓰는 마이그레이션은 **enum 값 집합을 Hibernate 기대값과 일치**시켜야 `validate` 통과. 값을 **알파벳순**으로 두면 Hibernate의 정렬 동작과 무관하게 안전(첫 시도 통과).
+
+### 문서
+- **OAuth2/소셜 로그인 설계를 `docs/architecture.md` §12에 정식 기록**(원칙: 검증주체만 교체·토큰발급 재사용 / 단일 테이블 provider·providerId / 로그인 플로우 / 계정연동·email유니크 정책 보류 / V2 prep 상태). + §7 Member 행·§11 TODO 현행화, §5~10 일부 stale 주의 배너 추가.
+
+### 다음
+- git init + GitHub (사용자가 직접 진행 예정).
+
+---
+
+## 다음 작업 (예정)
+- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → git init+GitHub.
+- 그 다음: **프론트엔드(React 개념·Next.js·디자인) 학습·폴리시**.
+- (백엔드 후보) 결제(payment) 도메인 / 옵션 추가·수정 API / 카테고리 계층화.
+- **운영 하드닝**: DB 비밀번호 env/시크릿 분리, Flyway/Liquibase 마이그레이션 도입(현재 ddl-auto:update는 로컬 학습용), git init + GitHub.

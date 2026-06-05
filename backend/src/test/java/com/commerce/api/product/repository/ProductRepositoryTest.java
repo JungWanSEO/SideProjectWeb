@@ -1,0 +1,149 @@
+package com.commerce.api.product.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.commerce.api.global.config.JpaConfig;
+import com.commerce.api.global.config.QuerydslConfig;
+import com.commerce.api.product.dto.ProductSearchCondition;
+import com.commerce.api.product.entity.Product;
+import com.commerce.api.product.entity.ProductOption;
+import com.commerce.api.product.entity.ProductStatus;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
+/**
+ * ProductRepository 슬라이스 테스트 (@DataJpaTest).
+ */
+@DataJpaTest
+@Import({JpaConfig.class, QuerydslConfig.class})   // QuerydslConfig: search()가 쓰는 JPAQueryFactory 빈 제공
+class ProductRepositoryTest {
+
+    /** 검색 테스트에서 노출 대상으로 보는 상태(판매중·품절). */
+    private static final List<ProductStatus> VISIBLE =
+            List.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT);
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    private Product newProduct() {
+        Product product = Product.builder()
+                .name("반팔티셔츠")
+                .price(29000L)
+                .description("면 100%")
+                .status(ProductStatus.ON_SALE)
+                .build();
+        product.addOption(ProductOption.create("M", 100));   // 재고는 옵션에
+        return product;
+    }
+
+    private Product product(String name, ProductStatus status) {
+        return Product.builder()
+                .name(name)
+                .price(29000L)
+                .description("desc")
+                .status(status)
+                .build();
+    }
+
+    @Test
+    @DisplayName("저장 시 id와 createdAt이 자동으로 채워진다")
+    void save_autoFields() {
+        Product saved = productRepository.save(newProduct());
+        assertThat(saved.getId()).isNotNull();
+        assertThat(saved.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("저장한 상품의 모든 필드가 그대로 복원된다 (enum 포함)")
+    void save_persistsAllFields() {
+        Product saved = productRepository.save(newProduct());
+
+        Product found = productRepository.findById(saved.getId()).orElseThrow();
+        assertThat(found.getName()).isEqualTo("반팔티셔츠");
+        assertThat(found.getPrice()).isEqualTo(29000L);
+        assertThat(found.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+        assertThat(found.getOptions()).hasSize(1);                       // 옵션이 cascade로 함께 저장됨
+        assertThat(found.getOptions().get(0).getSize()).isEqualTo("M");
+        assertThat(found.getOptions().get(0).getStock()).isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("findById - 없는 id면 빈 Optional")
+    void findById_notFound() {
+        assertThat(productRepository.findById(999L)).isEmpty();
+    }
+
+    private Product productPriced(String name, long price, ProductStatus status) {
+        return Product.builder()
+                .name(name).price(price).description("desc").status(status).build();
+    }
+
+    @Test
+    @DisplayName("search - 키워드(상품명 부분일치) + 가시 상태(판매중·품절)만 조회한다")
+    void search_keywordAndVisibility() {
+        productRepository.save(product("반팔티셔츠", ProductStatus.ON_SALE));
+        productRepository.save(product("긴팔티셔츠", ProductStatus.SOLD_OUT));
+        productRepository.save(product("청바지", ProductStatus.ON_SALE));            // 키워드 불일치
+        productRepository.save(product("판매중지티셔츠", ProductStatus.DISCONTINUED)); // 상태 제외
+
+        Page<Product> page = productRepository.search(VISIBLE,
+                new ProductSearchCondition("티셔츠", null, null, null, null),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        assertThat(page.getContent()).extracting(Product::getName)
+                .containsExactlyInAnyOrder("반팔티셔츠", "긴팔티셔츠");
+    }
+
+    @Test
+    @DisplayName("search - 가격대(min~max)로 거른다")
+    void search_priceRange() {
+        productRepository.save(productPriced("A", 10000L, ProductStatus.ON_SALE));
+        productRepository.save(productPriced("B", 20000L, ProductStatus.ON_SALE));
+        productRepository.save(productPriced("C", 30000L, ProductStatus.ON_SALE));
+
+        Page<Product> page = productRepository.search(VISIBLE,
+                new ProductSearchCondition(null, 15000L, 25000L, null, null),   // 15000 이상 ~ 25000 이하
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        assertThat(page.getContent()).extracting(Product::getName).containsExactly("B");
+    }
+
+    @Test
+    @DisplayName("search - 조건이 모두 비면 가시 상태 전체를 페이지로 (paging 메타)")
+    void search_emptyConditionPaging() {
+        for (int i = 0; i < 3; i++) {
+            productRepository.save(product("상품" + i, ProductStatus.ON_SALE));
+        }
+
+        Page<Product> first = productRepository.search(VISIBLE,
+                new ProductSearchCondition(null, null, null, null, null),
+                PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        assertThat(first.getContent()).hasSize(2);
+        assertThat(first.getTotalElements()).isEqualTo(3);
+        assertThat(first.getTotalPages()).isEqualTo(2);
+        assertThat(first.hasNext()).isTrue();
+    }
+
+    @Test
+    @DisplayName("search - categoryId로 거른다 (Long FK 컬럼 기준)")
+    void search_byCategory() {
+        productRepository.save(Product.builder().name("상의A").price(10000L)
+                .description("d").status(ProductStatus.ON_SALE).categoryId(1L).build());
+        productRepository.save(Product.builder().name("하의B").price(10000L)
+                .description("d").status(ProductStatus.ON_SALE).categoryId(2L).build());
+
+        Page<Product> page = productRepository.search(VISIBLE,
+                new ProductSearchCondition(null, null, null, 1L, null),   // categoryId=1만
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        assertThat(page.getContent()).extracting(Product::getName).containsExactly("상의A");
+    }
+}

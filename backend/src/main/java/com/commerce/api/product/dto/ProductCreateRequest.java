@@ -1,0 +1,58 @@
+package com.commerce.api.product.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+import java.util.List;
+
+/**
+ * 상품 등록 요청 DTO.
+ * 재고는 상품이 아니라 옵션(사이즈)별로 받는다 → options 목록(최소 1개).
+ */
+@Schema(description = "상품 등록 요청")
+public record ProductCreateRequest(
+
+        @Schema(description = "상품명(100자 이하)", example = "반팔 티셔츠")
+        @NotBlank(message = "상품명은 필수입니다.")
+        @Size(max = 100, message = "상품명은 100자 이하여야 합니다.")
+        String name,
+
+        @Schema(description = "가격(원, 0 이상)", example = "29000")
+        @NotNull(message = "가격은 필수입니다.")
+        @PositiveOrZero(message = "가격은 0 이상이어야 합니다.")
+        Long price,
+
+        @Schema(description = "상품 설명(1000자 이하)", example = "면 100% 베이직 반팔 티셔츠")
+        @Size(max = 1000, message = "설명은 1000자 이하여야 합니다.")
+        String description,
+
+        @Schema(description = "카테고리 ID(선택)", example = "1")
+        Long categoryId,
+
+        @Schema(description = "브랜드 ID(선택)", example = "1")
+        Long brandId,
+
+        @Schema(description = "사이즈 옵션 목록(최소 1개)")
+        @NotEmpty(message = "옵션은 최소 1개 이상이어야 합니다.")
+        @Valid
+        List<ProductOptionRequest> options
+) {
+    /** 옵션 등록 요청 (사이즈 + 재고). */
+    @Schema(description = "상품 옵션(사이즈)")
+    public record ProductOptionRequest(
+
+            @Schema(description = "사이즈", example = "M")
+            @NotBlank(message = "사이즈는 필수입니다.")
+            String size,
+
+            @Schema(description = "재고 수량(0 이상)", example = "100")
+            @NotNull(message = "재고는 필수입니다.")
+            @PositiveOrZero(message = "재고는 0 이상이어야 합니다.")
+            Integer stock
+    ) {
+    }
+}

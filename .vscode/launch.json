@@ -1,0 +1,14 @@
+{
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Spring Boot-CommerceApiApplication<SideProjectWeb>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.commerce.api.CommerceApiApplication",
+      "projectName": "SideProjectWeb",
+      "args": "",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

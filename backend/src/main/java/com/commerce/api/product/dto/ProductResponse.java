@@ -1,0 +1,45 @@
+package com.commerce.api.product.dto;
+
+import com.commerce.api.product.entity.Product;
+import com.commerce.api.product.entity.ProductStatus;
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * 상품 응답 DTO. 엔티티 대신 필요한 필드만 노출.
+ *
+ * <p>재고는 상품이 아니라 옵션(사이즈)에 있으므로 stock 대신 <b>options 목록</b>(사이즈별 재고·품절)을 담는다.
+ * 카테고리·브랜드 이름은 서비스가 enrich해서 넘긴다.
+ */
+public record ProductResponse(
+        Long id,
+        String name,
+        long price,
+        String description,
+        ProductStatus status,
+        Long categoryId,
+        String categoryName,
+        Long brandId,
+        String brandName,
+        List<ProductOptionResponse> options,   // 사이즈별 재고/품절
+        LocalDateTime createdAt
+) {
+    public static ProductResponse of(Product product, String categoryName, String brandName) {
+        List<ProductOptionResponse> options = product.getOptions().stream()
+                .map(ProductOptionResponse::from)
+                .toList();
+        return new ProductResponse(
+                product.getId(),
+                product.getName(),
+                product.getPrice(),
+                product.getDescription(),
+                product.getStatus(),
+                product.getCategoryId(),
+                categoryName,
+                product.getBrandId(),
+                brandName,
+                options,
+                product.getCreatedAt()
+        );
+    }
+}

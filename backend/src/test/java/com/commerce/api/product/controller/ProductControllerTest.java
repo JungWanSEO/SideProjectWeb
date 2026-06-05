@@ -1,0 +1,169 @@
+package com.commerce.api.product.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.commerce.api.global.common.PageResponse;
+import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.product.dto.ProductOptionResponse;
+import com.commerce.api.product.dto.ProductResponse;
+import com.commerce.api.product.dto.ProductSearchCondition;
+import com.commerce.api.product.entity.ProductStatus;
+import com.commerce.api.product.service.ProductService;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+/**
+ * ProductController 통합 테스트 (@WebMvcTest + MockMvc).
+ * 보안 필터는 비활성(addFilters = false). 권한 검증은 SecurityConfig 통합 테스트 영역.
+ */
+@WebMvcTest(ProductController.class)
+@AutoConfigureMockMvc(addFilters = false)
+class ProductControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private ProductService productService;
+
+    @Test
+    @DisplayName("POST /api/products - 등록 성공 시 201")
+    void create_success() throws Exception {
+        given(productService.create(any())).willReturn(
+                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                        ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now()));
+
+        mockMvc.perform(post("/api/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"반팔티셔츠","price":29000,"description":"면 100%","options":[{"size":"M","stock":100}]}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.price").value(29000))
+                .andExpect(jsonPath("$.data.status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.categoryName").value("상의"))
+                .andExpect(jsonPath("$.data.brandName").value("Nike"))
+                .andExpect(jsonPath("$.data.options[0].size").value("M"))
+                .andExpect(jsonPath("$.data.options[0].stock").value(100));
+    }
+
+    @Test
+    @DisplayName("POST /api/products - 상품명 누락·음수 가격이면 400")
+    void create_validationFail() throws Exception {
+        mockMvc.perform(post("/api/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"","price":-100,"options":[]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /api/products - 목록 200, 페이지 메타 포함 + 파라미터 없으면 기본 정렬(createdAt desc, size 20)")
+    void getProducts_success() throws Exception {
+        PageResponse<ProductResponse> page = new PageResponse<>(
+                List.of(new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                        ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now())),
+                0, 20, 1L, 1, false);
+        given(productService.getProducts(any(ProductSearchCondition.class), any(Pageable.class)))
+                .willReturn(page);
+
+        mockMvc.perform(get("/api/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.content[0].id").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(20))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.totalPages").value(1))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+
+        // 파라미터가 없으면 @PageableDefault가 적용된다 (컨트롤러가 받은 Pageable을 캡처해 확인)
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(productService).getProducts(any(ProductSearchCondition.class), captor.capture());
+        Pageable used = captor.getValue();
+        assertThat(used.getPageSize()).isEqualTo(20);
+        Sort.Order order = used.getSort().getOrderFor("createdAt");
+        assertThat(order).isNotNull();
+        assertThat(order.getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    @DisplayName("GET /api/products - keyword·minPrice·maxPrice 쿼리 파라미터가 검색 조건으로 바인딩된다")
+    void getProducts_withSearchParams() throws Exception {
+        PageResponse<ProductResponse> empty = new PageResponse<>(List.of(), 0, 20, 0L, 0, false);
+        given(productService.getProducts(any(ProductSearchCondition.class), any(Pageable.class)))
+                .willReturn(empty);
+
+        mockMvc.perform(get("/api/products")
+                        .param("keyword", "셔츠")
+                        .param("minPrice", "10000")
+                        .param("maxPrice", "50000")
+                        .param("categoryId", "3")
+                        .param("brandId", "7"))
+                .andExpect(status().isOk());
+
+        // 컨트롤러가 받은 ProductSearchCondition을 캡처해 쿼리 파라미터가 제대로 바인딩됐는지 확인
+        ArgumentCaptor<ProductSearchCondition> captor =
+                ArgumentCaptor.forClass(ProductSearchCondition.class);
+        verify(productService).getProducts(captor.capture(), any(Pageable.class));
+        ProductSearchCondition cond = captor.getValue();
+        assertThat(cond.keyword()).isEqualTo("셔츠");
+        assertThat(cond.minPrice()).isEqualTo(10000L);
+        assertThat(cond.maxPrice()).isEqualTo(50000L);
+        assertThat(cond.categoryId()).isEqualTo(3L);
+        assertThat(cond.brandId()).isEqualTo(7L);
+    }
+
+    @Test
+    @DisplayName("GET /api/products/{id} - 조회 성공 시 200")
+    void getProduct_success() throws Exception {
+        given(productService.getProduct(1L)).willReturn(
+                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                        ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now()));
+
+        mockMvc.perform(get("/api/products/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.options[0].size").value("M"))
+                .andExpect(jsonPath("$.data.options[0].stock").value(100));
+    }
+
+    @Test
+    @DisplayName("GET /api/products/{id} - 없는 상품이면 404")
+    void getProduct_notFound() throws Exception {
+        given(productService.getProduct(eq(999L)))
+                .willThrow(new BusinessException(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."));
+
+        mockMvc.perform(get("/api/products/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+}

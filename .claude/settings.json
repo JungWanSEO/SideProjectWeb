@@ -1,0 +1,77 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -H \"Accept: application/json\" \"https://start.spring.io/metadata/client\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('default:', d['bootVersion']['default']\\); [print\\('-', v['id']\\) for v in d['bootVersion']['values']]\")",
+      "Bash(curl -s -o starter.zip \"https://start.spring.io/starter.zip?type=gradle-project&language=java&javaVersion=21&bootVersion=3.5.14&groupId=com.commerce&artifactId=commerce-api&name=commerce-api&packageName=com.commerce.api&dependencies=web,data-jpa,mysql,lombok,validation,actuator,h2\")",
+      "Bash(mkdir -p __TRACKED_VAR__/__TRACKED_VAR__)",
+      "Bash(touch __TRACKED_VAR__/__TRACKED_VAR__/.gitkeep)",
+      "Bash(mkdir -p global/__TRACKED_VAR__)",
+      "Bash(touch global/__TRACKED_VAR__/.gitkeep)",
+      "Bash(cd /c/gitProject/SideProjectWeb && echo \"=== 도메인 패키지 트리 ===\" && find src/main/java/com/commerce/api -type d | sort)",
+      "Read(//c/c/gitProject/SideProjectWeb/src/main/java/com/commerce/**)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(bash -c 'log=\"/c/gitProject/SideProjectWeb/docs/dev-log.md\"; src=\"/c/gitProject/SideProjectWeb/src\"; if [ -e \"$log\" ] && [ -d \"$src\" ]; then n=$\\(find \"$src\" -type f -newer \"$log\" -print -quit\\); if [ -n \"$n\" ]; then printf \"{\\\\\"systemMessage\\\\\":\\\\\"src 코드가 dev-log.md보다 최근에 수정됨 — docs/dev-log.md 갱신을 확인하세요.\\\\\"}\"; fi; fi')",
+      "Bash(python -c ' *)",
+      "Bash(./gradlew build *)",
+      "Bash(./gradlew bootRun --console=plain)",
+      "Bash(curl -s -X POST http://localhost:8080/api/members -H 'Content-Type: application/json' -d '{\"email\":\"alice@commerce.com\",\"password\":\"password123\",\"nickname\":\"alice\"}' -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Bash(curl -s http://localhost:8080/api/members/1 -w \"\\\\n[HTTP %{http_code}]\\\\n\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/members -H 'Content-Type: application/json' -d '{\"email\":\"alice@commerce.com\",\"password\":\"password123\",\"nickname\":\"bob\"}' -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Bash(python -c \"import io; open\\('/tmp/m.json','wb'\\).write\\('{\\\\\"email\\\\\":\\\\\"kor@commerce.com\\\\\",\\\\\"password\\\\\":\\\\\"password123\\\\\",\\\\\"nickname\\\\\":\\\\\"테스터\\\\\"}'.encode\\('utf-8'\\)\\)\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/members -H 'Content-Type: application/json; charset=UTF-8' --data-binary @/tmp/m.json -w '\\\\n[HTTP %{http_code}]\\\\n')",
+      "Bash(./gradlew test *)",
+      "Bash(docker compose *)",
+      "Bash(./gradlew compileJava --console=plain)",
+      "Bash(docker exec *)",
+      "Bash(curl -s -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"alice@commerce.com\",\"password\":\"password123\"}')",
+      "Bash(bash -c 'log=\"/c/gitProject/SideProjectWeb/docs/dev-log.md\"; src=\"/c/gitProject/SideProjectWeb/backend/src\"; if [ -e \"$log\" ] && [ -d \"$src\" ]; then n=$\\(find \"$src\" -type f -newer \"$log\" -print -quit\\); if [ -n \"$n\" ]; then printf \"REMIND\"; fi; fi')",
+      "Bash(Get-ChildItem -Path \"c:\\\\gitProject\\\\SideProjectWeb\\\\backend\" -Recurse -Directory -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -v '^\\\\.$\\\\|^\\\\.\\\\.$\\\\|^$')",
+      "Bash(grep -v '^\\\\.$\\\\|^\\\\.\\\\.$')",
+      "Bash(cd /c/gitProject/SideProjectWeb && tail -5 docs/dev-log.md)",
+      "Read(//c/c/gitProject/SideProjectWeb/docs/**)",
+      "PowerShell(& \"$PWD\\\\backend\\\\gradlew.bat\" -p backend test --console=plain)",
+      "PowerShell(docker ps --format \"{{.Names}}  {{.Status}}  {{.Ports}}\"; \"--- 8080 ---\"; Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort, OwningProcess; \"--- compose file ---\"; Test-Path \"$PWD\\\\backend\\\\docker-compose.yml\")",
+      "PowerShell(docker compose -f \"$PWD\\\\backend\\\\docker-compose.yml\" up -d)",
+      "PowerShell(docker start commerce-mysql)",
+      "PowerShell(\"--- status ---\")",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(60\\); do { $h = docker inspect --format '{{.State.Health.Status}}' commerce-mysql 2>$null; if \\($h -eq 'healthy'\\) { break }; Start-Sleep -Seconds 3 } while \\(\\(Get-Date\\) -lt $deadline\\); \"health: $h\")",
+      "PowerShell(& \"$PWD\\\\backend\\\\gradlew.bat\" -p backend bootRun --console=plain)",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(120\\); $status = $null; do { try { $r = Invoke-RestMethod -Uri \"http://localhost:8080/actuator/health\" -TimeoutSec 3 -ErrorAction Stop; $status = $r.status; if \\($status\\) { break } } catch { Start-Sleep -Seconds 4 } } while \\(\\(Get-Date\\) -lt $deadline\\); \"health: $status\")",
+      "PowerShell(docker exec commerce-mysql mysql -uroot -proot1234 -e \"SHOW DATABASES;\" 2>&1)",
+      "PowerShell(docker exec commerce-mysql mysql -uroot -proot1234 -e \"SELECT user, host FROM mysql.user WHERE user='commerce';\" 2>&1)",
+      "PowerShell(\"--- users ---\")",
+      "PowerShell(docker exec commerce-mysql mysql -uroot -proot1234 -N -e \"SHOW TABLES IN RECOVER_YOUR_DATA;\")",
+      "PowerShell(docker volume ls --format \"{{.Name}}\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3307 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(\"=== commerce-mysql �����̳� ����/����Ʈ ===\")",
+      "PowerShell(\"=== ��ü ���� ===\")",
+      "PowerShell(\"=== 3306 ������ \\(����Ƽ�� MySQL\\) ===\")",
+      "PowerShell(\"=== 3307 ������ ===\")",
+      "PowerShell($creds = @\\(@\\('root','root1234'\\), @\\('root',''\\), @\\('commerce','commerce1234'\\)\\); foreach \\($c in $creds\\) { $u=$c[0]; $p=$c[1]; \"--- try $u / '$p' ---\"; if \\($p -eq ''\\) { docker exec commerce-mysql mysql -h host.docker.internal -P 3306 -u $u --connect-timeout=4 -N -e \"SHOW DATABASES;\" } else { docker exec commerce-mysql mysql -h host.docker.internal -P 3306 -u $u \"-p$p\" --connect-timeout=4 -N -e \"SHOW DATABASES;\" } })",
+      "PowerShell(\"=== remove compromised container ===\"; docker rm -f commerce-mysql; \"=== remove volumes \\(compromised + stray empty\\) ===\"; docker volume rm sideprojectweb_commerce-mysql-data backend_commerce-mysql-data; \"=== fresh up ===\"; docker compose -f \"$PWD\\\\backend\\\\docker-compose.yml\" up -d)",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(90\\); do { $h = docker inspect --format '{{.State.Health.Status}}' commerce-mysql 2>$null; if \\($h -eq 'healthy'\\) { break }; Start-Sleep -Seconds 4 } while \\(\\(Get-Date\\) -lt $deadline\\); \"health: $h\"; if \\($h -eq 'healthy'\\) { \"=== databases ===\"; docker exec commerce-mysql mysql -uroot \"-pr00t-Cmrc-2026-Xz9Qpve3\" -N -e \"SHOW DATABASES;\" })",
+      "PowerShell(docker exec commerce-mysql mysql -uroot \"-pr00t-Cmrc-2026-Xz9Qpve3\" -N -e \"UPDATE commerce.product SET status='DISCONTINUED' WHERE name='P03-Jacket'; UPDATE commerce.product SET status='SOLD_OUT' WHERE name='P05-Sneakers'; SELECT id, name, price, status, created_at FROM commerce.product ORDER BY id;\")"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "log=\"/c/gitProject/SideProjectWeb/docs/dev-log.md\"; src=\"/c/gitProject/SideProjectWeb/backend/src\"; if [ -e \"$log\" ] && [ -d \"$src\" ]; then n=$(find \"$src\" -type f -newer \"$log\" -print -quit); if [ -n \"$n\" ]; then printf '{\"systemMessage\":\"\\ud83d\\udd14 src/ 코드가 dev-log.md보다 최근에 수정됨 — docs/dev-log.md 갱신을 확인하세요.\"}'; fi; fi",
+            "shell": "bash",
+            "timeout": 10,
+            "statusMessage": "dev-log 확인"
+          }
+        ]
+      }
+    ]
+  }
+}

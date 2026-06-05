@@ -1,0 +1,112 @@
+package com.commerce.api.product.repository;
+
+import static com.commerce.api.product.entity.QProduct.product;
+
+import com.commerce.api.product.dto.ProductSearchCondition;
+import com.commerce.api.product.entity.Product;
+import com.commerce.api.product.entity.ProductStatus;
+import com.querydsl.core.BooleanBuilder;
+import com.querydsl.core.types.Order;
+import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.core.types.dsl.PathBuilder;
+import com.querydsl.jpa.impl.JPAQueryFactory;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.util.StringUtils;
+
+/**
+ * {@link ProductRepositoryCustom}의 QueryDSL 구현체.
+ *
+ * <p>{@code QProduct.product}는 빌드 시 애너테이션 프로세서가 Product 엔티티로부터 생성한
+ * "쿼리 타입"이다. static import 해서 {@code product.name}, {@code product.price}처럼
+ * 컬럼을 <b>타입 안전</b>하게 참조한다(오타는 컴파일 단계에서 잡힌다).
+ */
+@RequiredArgsConstructor
+public class ProductRepositoryImpl implements ProductRepositoryCustom {
+
+    /** QuerydslConfig에서 등록한 빈을 생성자 주입(@RequiredArgsConstructor가 생성자 자동 생성). */
+    private final JPAQueryFactory queryFactory;
+
+    @Override
+    public Page<Product> search(Collection<ProductStatus> visibleStatuses,
+                                ProductSearchCondition condition,
+                                Pageable pageable) {
+        // 1) 동적 where 조립.
+        //    BooleanBuilder.and(null)은 "그 조건을 무시"한다 → 값이 있을 때만 거는 조건을
+        //    if 없이 깔끔하게 표현(아래 헬퍼들이 값 없으면 null 반환). LINQ의 조건부 Where와 같은 발상.
+        BooleanBuilder where = new BooleanBuilder()
+                .and(product.status.in(visibleStatuses))    // 가시 상태(판매중·품절)만 — 항상 적용
+                .and(keywordContains(condition.keyword()))  // 키워드(있을 때만)
+                .and(priceGoe(condition.minPrice()))        // 최소가(있을 때만)
+                .and(priceLoe(condition.maxPrice()))        // 최대가(있을 때만)
+                .and(eqCategory(condition.categoryId()))    // 카테고리(있을 때만)
+                .and(eqBrand(condition.brandId()));         // 브랜드(있을 때만)
+
+        // 2) 콘텐츠 조회: where + 정렬 + 페이지(offset/limit)
+        List<Product> content = queryFactory
+                .selectFrom(product)
+                .where(where)
+                .orderBy(toOrderSpecifiers(pageable.getSort()))
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        // 3) 전체 개수: 페이지 메타(totalElements/totalPages) 계산용. 정렬·페이징 없이 count만.
+        Long total = queryFactory
+                .select(product.count())
+                .from(product)
+                .where(where)
+                .fetchOne();
+
+        // PageImpl로 묶으면 서비스에서 기존 PageResponse.from을 그대로 재사용할 수 있다.
+        return new PageImpl<>(content, pageable, total == null ? 0L : total);
+    }
+
+    // --- 조건 헬퍼: 값이 없으면 null 반환 → 위 BooleanBuilder가 자동으로 무시 ---
+    private BooleanExpression keywordContains(String keyword) {
+        return StringUtils.hasText(keyword) ? product.name.contains(keyword) : null;  // LIKE %kw%
+    }
+
+    private BooleanExpression priceGoe(Long minPrice) {
+        return minPrice != null ? product.price.goe(minPrice) : null;                 // price >= min
+    }
+
+    private BooleanExpression priceLoe(Long maxPrice) {
+        return maxPrice != null ? product.price.loe(maxPrice) : null;                 // price <= max
+    }
+
+    private BooleanExpression eqCategory(Long categoryId) {
+        return categoryId != null ? product.categoryId.eq(categoryId) : null;         // category_id = ?
+    }
+
+    private BooleanExpression eqBrand(Long brandId) {
+        return brandId != null ? product.brandId.eq(brandId) : null;                  // brand_id = ?
+    }
+
+    /**
+     * Pageable의 정렬(Sort)을 QueryDSL의 {@link OrderSpecifier} 배열로 변환한다.
+     *
+     * <p>Pageable은 "price,asc" 같은 <b>문자열 기반</b> 정렬을 담고 있어, QueryDSL이 이해하는
+     * 경로 객체로 바꿔줘야 한다. {@link PathBuilder}의 별칭("product")은 위에서 쓴
+     * {@code QProduct.product}의 별칭과 같아야 올바른 쿼리(JPQL의 같은 별칭)가 생성된다.
+     */
+    private OrderSpecifier<?>[] toOrderSpecifiers(Sort sort) {
+        List<OrderSpecifier<?>> orders = new ArrayList<>();
+        PathBuilder<Product> path = new PathBuilder<>(Product.class, "product");
+        for (Sort.Order o : sort) {
+            Order direction = o.isAscending() ? Order.ASC : Order.DESC;
+            // 정렬 키가 런타임에 결정돼 제네릭 타입을 정적으로 알 수 없다 → raw 타입 사용(경고 억제).
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            OrderSpecifier<?> spec = new OrderSpecifier(direction, path.get(o.getProperty()));
+            orders.add(spec);
+        }
+        return orders.toArray(new OrderSpecifier[0]);
+    }
+}
