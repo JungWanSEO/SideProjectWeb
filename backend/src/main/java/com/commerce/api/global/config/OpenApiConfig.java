@@ -17,7 +17,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("commerce-api")
-                        .description("무신사 스타일 이커머스 백엔드 API 문서 (member / product / order / cart)")
+                        .description("패션 커머스 백엔드 API 문서 (member / product / order / cart)")
                         .version("v0.0.1"));
     }
 }
