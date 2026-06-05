@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "commerce",
-  description: "무신사 스타일 이커머스 (포트폴리오)",
+  description: "패션 커머스 (포트폴리오)",
 };
 
 export default function RootLayout({

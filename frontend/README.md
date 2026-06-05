@@ -1,6 +1,6 @@
 # frontend
 
-commerce 프로젝트의 프론트엔드 — 무신사 스타일 이커머스 웹.
+commerce 프로젝트의 프론트엔드 — 패션 커머스 웹.
 
 ## 스택 (의도적 선택 — 변경 시 사용자 확인)
 - **Next.js 15.1** (App Router) · **React 19** · **TypeScript**
