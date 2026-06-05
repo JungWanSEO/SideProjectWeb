@@ -27,3 +27,4 @@
 - 새 도메인 추가 → `add-domain` skill (`/add-domain`)
 - 개발 일지 작성 → `dev-log` skill
 - 아키텍처 근거 → `docs/architecture.md`
+- Git 브랜치·PR·커밋 규칙 → `CONTRIBUTING.md` (main 보호 · 작업은 `feature/*`→PR로 dev 병합 · Conventional Commits)
