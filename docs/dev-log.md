@@ -60,6 +60,10 @@
 - **인증 마무리** — 401 EntryPoint / 403 핸들러 + FE 자동 refresh
 - **OAuth2 대비 Member prep** — Flyway **V2**(첫 실제 마이그레이션), provider/providerId
 
+**5일차 (06-05)**
+- **git/GitHub 정리 + 브랜드명 제거 + dev-log 월별 분리** — repo SideProjectWeb, main/dev + PR 워크플로(CONTRIBUTING.md), 무신사→패션 커머스
+- **결제 도메인 설계 합의** — 모의 PG(포트-어댑터) · 재고 차감=결제 승인 시점(OrderStatus PENDING/PAID) · 멱등성 · Redis/MQ 확장지점 (상세 architecture.md §13)
+
 ---
 
 ## 🧭 핵심 결정·이정표 (요약)

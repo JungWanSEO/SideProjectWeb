@@ -220,6 +220,42 @@ CartItem  ──ID참조──> Product (스냅샷 없음, 조회 시 enrich)
 
 ---
 
+## 13. 결제(Payment) 설계
+
+> 결제 도메인. **모의 PG**(외부 연동 없이 시뮬레이션)로 시작하되 **포트-어댑터로 추상화**해 실제 PG(토스/포트원) 교체가 가능하게 한다. 재고는 **결제 승인 시점에 차감**(주문 생성 시 X). 구현은 단계적(P1 골격 → P2 흐름전환 → P3 결제API/멱등성 → P4 취소·환불).
+
+### 13.1 포트-어댑터 (외부 연동 추상화)
+- `PaymentGateway`(인터페이스=포트): `approve(거래정보) → 결과(pgTransactionId, 성공여부)`.
+- `MockPaymentGateway`(어댑터): 외부 호출 없이 가짜 `pgTransactionId` 발급 + 승인/실패 결정(테스트용 실패 트리거). 운영 전환 시 **같은 인터페이스에 실제 PG 어댑터만 교체**(DIP). (.NET `IPaymentGateway` + DI와 동형.)
+
+### 13.2 상태머신 & 주문↔결제 흐름
+- `OrderStatus`: `PENDING`(결제대기) → `PAID`(결제완료) / `CANCELLED`. **기존 `ORDERED` 제거** — 결제 도입으로 "주문=완료"가 깨짐.
+- `PaymentStatus`: `READY` → `PAID` / `FAILED`, `PAID` → `CANCELLED`(환불).
+```
+체크아웃 → 주문 PENDING (스냅샷만, 재고 차감 ❌)
+결제 요청 → MockGateway.approve
+   성공 → [한 트랜잭션] 재고 차감(@Version+재시도) + Order PAID + Payment PAID
+   실패 → Payment FAILED, Order PENDING 유지(재결제 가능)
+주문 취소 → (PAID였으면) 재고 복원 + Order/Payment CANCELLED
+```
+- **핵심 이동**: 재고 차감이 `OrderProcessor.placeOrder` → **결제 승인 단계**로 이동. 낙관락 재시도(@Retryable + 새 트랜잭션)도 결제 승인 워커로 따라감.
+
+### 13.3 멱등성 (중복 결제 방지)
+- 클라이언트가 `idempotencyKey`(UUID)를 결제 요청에 포함 → `Payment.idempotencyKey` **unique**. 동일 키 재요청은 새 결제 대신 **기존 결과 반환**(네트워크 재시도·더블클릭 방어).
+
+### 13.4 데이터 모델 (Flyway V3)
+- `Payment`: id · `orderId`(Long, ID참조) · amount · `status`(PaymentStatus) · method · pgTransactionId · `idempotencyKey`(unique) · BaseEntity.
+- 주문↔결제 = 다른 애그리거트 → **ID 참조**(객체연관 X, §11 준수).
+- `V3__add_payment.sql`: payment 테이블 + `orders.status` enum 값 변경(ORDERED → PENDING/PAID).
+
+### 13.5 확장 지점 (지금은 미도입 — 이음새만 확보)
+테스트 단계라 단순(MySQL+JPA)하게 가되, 경계만 끊어두어 추후 무중단 확장:
+- **Redis**: 멱등키 저장(TTL), 재고 분산락(스케일아웃 시 `@Version` 보완), 결제세션 캐시.
+- **RabbitMQ/Kafka**: 결제완료 **이벤트 발행**(주문확정·배송·알림 디커플링), **아웃박스 패턴**(DB 커밋↔메시지 발행 원자성), 실제 PG **웹훅 비동기 수신**.
+- **실제 PG**: `PaymentGateway`에 토스/포트원 어댑터 추가 + 결제창(프론트)·웹훅.
+
+---
+
 > **알려진 TODO/한계**: ① ~~재고 oversell~~ → **@Version+재시도로 해결(완료)**. ② ~~JWT 시크릿 환경변수화~~ → **OS 환경변수(12-factor)·`.env`로 분리(완료)**. ③ ~~`ddl-auto: update` → Flyway~~ → **Flyway 도입·`validate` 전환(완료)**. ④ 장바구니 수량/재고 검증 없음(담기 단계, 의도적 — 주문 시 검증). ⑤ ~~frontend 미구현~~ → **Next.js 구매흐름 구현 중**. ⑥ ~~FE CORS~~ → **완료**. ⑦ OAuth2/소셜 로그인 — 유저 모델 prep 완료(§12), 구현은 후속.
 >
 > ⚠️ **문서 갱신 지연 주의**: §5~§10 일부는 초기(5도메인·헤더 JWT·ddl update) 기준이라 현행과 차이가 있음 — 실제 현행은 category·brand 도메인 추가, 상품 옵션(사이즈) 도입, **인증이 httpOnly 쿠키 기반**, Flyway 적용 등. 정확한 최신 이력은 `dev-log.md` 참고.
