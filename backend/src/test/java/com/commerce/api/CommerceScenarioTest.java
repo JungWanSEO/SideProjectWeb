@@ -21,7 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * 전체 구매 흐름 통합 테스트 (@SpringBootTest + MockMvc, 보안 필터 ON, 실제 JWT 사용).
- * (ADMIN)상품등록 → (USER)가입·로그인 → 주문 → 재고차감 → 조회 → 취소 → 재고복원 → 장바구니.
+ * (ADMIN)상품등록 → (USER)가입·로그인 → 주문(PENDING) → 조회 → 취소 → 장바구니 → 체크아웃.
+ * (결제로 인한 재고 차감은 P3 결제 API 도입 후 검증한다 — 현재 주문은 PENDING까지.)
  *
  * <p>인증은 <b>httpOnly 쿠키</b> 기반: 로그인 응답의 Set-Cookie(access/refresh)를 받아 이후 요청에 그대로 재전송한다.
  */
@@ -108,16 +109,16 @@ class CommerceScenarioTest {
                 .andReturn().getResponse().getContentAsString();
         long orderId = dataId(orderJson);
 
-        // 6) 옵션 재고 차감 확인 (10 → 7)
+        // 6) 주문은 PENDING(미결제)이라 재고는 아직 차감되지 않는다 (10 그대로 — 차감은 결제 시점)
         mockMvc.perform(get("/api/products/" + productId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.options[0].stock").value(7));
+                .andExpect(jsonPath("$.data.options[0].stock").value(10));
 
-        // 7) 주문 조회 (ORDERED)
+        // 7) 주문 조회 (PENDING — 결제 대기)
         mockMvc.perform(get("/api/orders/" + orderId)
                         .cookie(userCookies))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ORDERED"));
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
 
         // 8) 주문 취소 → CANCELLED
         mockMvc.perform(post("/api/orders/" + orderId + "/cancel")
@@ -125,7 +126,7 @@ class CommerceScenarioTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
 
-        // 9) 옵션 재고 복원 확인 (7 → 10)
+        // 9) PENDING 주문 취소는 재고 차감이 없었으므로 복원도 없다 (10 그대로)
         mockMvc.perform(get("/api/products/" + productId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.options[0].stock").value(10));
@@ -150,13 +151,13 @@ class CommerceScenarioTest {
                 .andExpect(jsonPath("$.data.totalPrice").value(100000))   // 50000 x 2
                 .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"));
 
-        // 12) 체크아웃 후: 장바구니 비워짐 + 재고 차감(10 → 8)
+        // 12) 체크아웃 후: 장바구니 비워짐. 주문은 PENDING이라 재고는 그대로(10) — 차감은 결제 시점(P3).
         mockMvc.perform(get("/api/carts")
                         .cookie(userCookies))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalQuantity").value(0));
         mockMvc.perform(get("/api/products/" + productId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.options[0].stock").value(8));
+                .andExpect(jsonPath("$.data.options[0].stock").value(10));
     }
 }

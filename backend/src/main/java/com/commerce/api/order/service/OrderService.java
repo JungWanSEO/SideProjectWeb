@@ -56,6 +56,18 @@ public class OrderService {
         return orderProcessor.checkout(memberId);
     }
 
+    /**
+     * 결제 확정(PENDING → PAID + 재고 차감). 동시 재고 차감으로 낙관적 락 충돌이 나면
+     * create와 동일하게 최대 3회까지 (새 트랜잭션으로) 재시도한다.
+     */
+    @Retryable(
+            retryFor = OptimisticLockingFailureException.class,
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 100))
+    public OrderResponse pay(Long orderId) {
+        return orderProcessor.pay(orderId);
+    }
+
     /** 단건 조회 — 본인 주문이거나 ADMIN일 때만 허용. */
     @Transactional(readOnly = true)
     public OrderResponse getOrder(Long id, Long requesterId, boolean admin) {
@@ -74,18 +86,21 @@ public class OrderService {
     }
 
     /**
-     * 주문 취소: 상태를 CANCELLED로 바꾸고, 차감했던 재고를 복원한다.
-     * 본인 주문이거나 ADMIN일 때만 허용.
+     * 주문 취소: 상태를 CANCELLED로 바꾸고, 결제 완료(PAID)였던 주문이면 차감했던 재고를 복원한다.
+     * (PENDING 주문은 재고가 차감된 적 없으므로 복원하지 않는다.) 본인 주문이거나 ADMIN일 때만 허용.
      */
     @Transactional
     public OrderResponse cancel(Long id, Long requesterId, boolean admin) {
         Order order = findOwnedOrder(id, requesterId, admin);
+        boolean wasPaid = order.isPaid();   // 상태를 바꾸기 전에 결제 여부 확인
         order.cancel();   // 이미 취소된 주문이면 예외
 
-        for (OrderItem item : order.getOrderItems()) {
-            // 루트 경유: 옵션 ID로 상품을 로드해 해당 옵션 재고를 복원
-            productRepository.findByOptionId(item.getOptionId())
-                    .ifPresent(product -> product.increaseStock(item.getOptionId(), item.getQuantity()));
+        if (wasPaid) {
+            // 결제 완료된 주문만 재고가 차감돼 있으므로 복원한다.
+            for (OrderItem item : order.getOrderItems()) {
+                productRepository.findByOptionId(item.getOptionId())
+                        .ifPresent(product -> product.increaseStock(item.getOptionId(), item.getQuantity()));
+            }
         }
         return OrderResponse.from(order);
     }

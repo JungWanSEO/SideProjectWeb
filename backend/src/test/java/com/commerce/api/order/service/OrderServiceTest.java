@@ -2,7 +2,10 @@ package com.commerce.api.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.commerce.api.global.common.PageResponse;
 import com.commerce.api.global.exception.BusinessException;
@@ -76,9 +79,10 @@ class OrderServiceTest {
     @DisplayName("주문 취소 성공 - 상태 CANCELLED + 옵션 재고 복원")
     void cancel_success() {
         Order order = orderWithId(1L, 100L, item(3));
+        order.markPaid();   // 결제 완료 주문이어야 취소 시 재고가 복원됨
         given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
-        Product product = productWithOption(1L, 10L, 7);   // 주문으로 7까지 차감된 옵션
+        Product product = productWithOption(1L, 10L, 7);   // 결제로 7까지 차감된 옵션
         given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
 
         OrderResponse response = orderService.cancel(1L, 100L, false);   // 주문 주인(100번) 본인
@@ -97,6 +101,18 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.cancel(1L, 100L, false))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("이미 취소된 주문");
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 미결제(PENDING) 주문은 재고 복원 없이 취소된다")
+    void cancel_pendingOrder_noStockRestore() {
+        Order order = orderWithId(1L, 100L, item(3));   // PENDING (결제 전)
+        given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+        OrderResponse response = orderService.cancel(1L, 100L, false);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        verify(productRepository, never()).findByOptionId(any());   // 재고 복원 시도 없음
     }
 
     @Test
@@ -169,6 +185,6 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.cancel(1L, 999L, false))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("본인의 주문");
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.ORDERED);   // 취소 막힘 → 상태 그대로
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);   // 취소 막힘 → 상태 그대로
     }
 }

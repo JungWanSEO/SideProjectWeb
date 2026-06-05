@@ -14,6 +14,8 @@ import com.commerce.api.order.dto.OrderCreateRequest;
 import com.commerce.api.order.dto.OrderCreateRequest.OrderItemRequest;
 import com.commerce.api.order.dto.OrderResponse;
 import com.commerce.api.order.entity.Order;
+import com.commerce.api.order.entity.OrderItem;
+import com.commerce.api.order.entity.OrderStatus;
 import com.commerce.api.order.repository.OrderRepository;
 import com.commerce.api.product.entity.Product;
 import com.commerce.api.product.entity.ProductOption;
@@ -30,7 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * OrderProcessor 단위 테스트 — 주문 처리(옵션 재고 차감·스냅샷·총액) 로직.
+ * OrderProcessor 단위 테스트.
+ * 주문 생성(place/checkout)은 PENDING + 스냅샷만(재고 미차감), 재고 차감은 결제 확정(pay) 시점.
  */
 @ExtendWith(MockitoExtension.class)
 class OrderProcessorTest {
@@ -56,8 +59,18 @@ class OrderProcessorTest {
         return product;
     }
 
+    /** id가 채워진 PENDING 주문(옵션 1개) 생성 — pay 테스트용. */
+    private Order pendingOrder(Long orderId, Long optionId, int quantity) {
+        Order order = Order.create(100L);
+        order.addItem(OrderItem.builder()
+                .productId(1L).optionId(optionId).productName("반팔티셔츠").size("M")
+                .orderPrice(10000L).quantity(quantity).build());
+        ReflectionTestUtils.setField(order, "id", orderId);
+        return order;
+    }
+
     @Test
-    @DisplayName("주문 처리 성공 - 옵션 재고 차감, 가격·사이즈 스냅샷, 총액 계산")
+    @DisplayName("주문 생성 - PENDING(재고 미차감), 가격·사이즈 스냅샷, 총액 계산")
     void place_success() {
         Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 10);
         given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
@@ -66,30 +79,18 @@ class OrderProcessorTest {
         OrderResponse response = orderProcessor.place(100L,
                 new OrderCreateRequest(List.of(new OrderItemRequest(10L, 3))));
 
+        assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(response.totalPrice()).isEqualTo(30000L);
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().get(0).productName()).isEqualTo("반팔티셔츠");
         assertThat(response.items().get(0).size()).isEqualTo("M");
         assertThat(response.items().get(0).subtotal()).isEqualTo(30000L);
-        assertThat(product.getOptions().get(0).getStock()).isEqualTo(7);   // 10 - 3
+        assertThat(product.getOptions().get(0).getStock()).isEqualTo(10);   // 재고 미차감(결제 시 차감)
         verify(orderRepository).save(any(Order.class));
     }
 
     @Test
-    @DisplayName("주문 처리 실패 - 옵션 재고 부족이면 예외, 저장 안 됨")
-    void place_insufficientStock() {
-        Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 2);
-        given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
-
-        assertThatThrownBy(() -> orderProcessor.place(100L,
-                new OrderCreateRequest(List.of(new OrderItemRequest(10L, 5)))))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("재고가 부족합니다");
-        verify(orderRepository, never()).save(any(Order.class));
-    }
-
-    @Test
-    @DisplayName("주문 처리 실패 - 존재하지 않는 옵션")
+    @DisplayName("주문 생성 실패 - 존재하지 않는 옵션 (스냅샷용 조회 실패)")
     void place_optionNotFound() {
         given(productRepository.findByOptionId(99L)).willReturn(Optional.empty());
 
@@ -101,7 +102,7 @@ class OrderProcessorTest {
     }
 
     @Test
-    @DisplayName("체크아웃 - 장바구니를 주문으로 만들고 장바구니를 비운다")
+    @DisplayName("체크아웃 - 장바구니를 PENDING 주문으로 만들고 장바구니를 비운다 (재고 미차감)")
     void checkout_createsOrderAndClearsCart() {
         Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 10);
         Cart cart = Cart.create(100L);
@@ -112,9 +113,10 @@ class OrderProcessorTest {
 
         OrderResponse response = orderProcessor.checkout(100L);
 
+        assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(response.totalPrice()).isEqualTo(20000L);              // 10000 x 2
         assertThat(response.items()).hasSize(1);
-        assertThat(product.getOptions().get(0).getStock()).isEqualTo(8);  // 10 - 2
+        assertThat(product.getOptions().get(0).getStock()).isEqualTo(10); // 재고 미차감(결제 시 차감)
         assertThat(cart.getCartItems()).isEmpty();                        // 장바구니 비워짐
     }
 
@@ -128,5 +130,43 @@ class OrderProcessorTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("장바구니가 비어 있습니다");
         verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("결제 확정 - 옵션 재고 차감 + 주문 PAID")
+    void pay_success() {
+        Order order = pendingOrder(1L, 10L, 3);
+        given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+        Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 10);
+        given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
+
+        OrderResponse response = orderProcessor.pay(1L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAID);
+        assertThat(product.getOptions().get(0).getStock()).isEqualTo(7);   // 10 - 3
+    }
+
+    @Test
+    @DisplayName("결제 확정 실패 - 재고 부족이면 예외, 주문은 PENDING 유지")
+    void pay_insufficientStock() {
+        Order order = pendingOrder(1L, 10L, 5);
+        given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+        Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 2);
+        given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> orderProcessor.pay(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("재고가 부족합니다");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("결제 확정 실패 - 없는 주문")
+    void pay_orderNotFound() {
+        given(orderRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> orderProcessor.pay(999L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("주문을 찾을 수 없습니다");
     }
 }

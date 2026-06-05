@@ -40,25 +40,26 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    @Operation(summary = "주문 생성", description = "상품 ID·수량 목록으로 주문한다. 주문자는 로그인 사용자. 재고를 차감하고 주문 시점 가격을 스냅샷한다. 재고 부족 시 409.")
+    @Operation(summary = "주문 생성", description = "상품 ID·수량 목록으로 주문한다. 주문자는 로그인 사용자. 주문은 결제 대기(PENDING)로 생성되며 주문 시점 가격을 스냅샷한다. 재고 차감은 결제 승인 시점에 일어난다.")
     @PostMapping
     public ResponseEntity<ApiResponse<OrderResponse>> create(
             @Valid @RequestBody OrderCreateRequest request) {
         OrderResponse response = orderService.create(SecurityUtil.getCurrentMemberId(), request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("주문이 완료되었습니다.", response));
+                .body(ApiResponse.success("주문이 접수되었습니다. (결제 대기)", response));
     }
 
     @Operation(summary = "장바구니 체크아웃",
             description = "로그인 사용자의 장바구니를 주문으로 만들고 장바구니를 비운다(한 트랜잭션). "
-                    + "주문 항목은 서버의 장바구니에서 가져온다(클라이언트가 항목을 보내지 않음). 빈 장바구니면 400, 재고 부족 시 409.")
+                    + "주문 항목은 서버의 장바구니에서 가져온다(클라이언트가 항목을 보내지 않음). 빈 장바구니면 400. "
+                    + "주문은 결제 대기(PENDING)로 생성된다(재고 차감은 결제 승인 시).")
     @PostMapping("/checkout")
     public ResponseEntity<ApiResponse<OrderResponse>> checkout() {
         OrderResponse response = orderService.checkout(SecurityUtil.getCurrentMemberId());
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("주문이 완료되었습니다.", response));
+                .body(ApiResponse.success("주문이 접수되었습니다. (결제 대기)", response));
     }
 
     @Operation(summary = "내 주문 목록 조회 (요약)",
