@@ -19,7 +19,6 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ordering, setOrdering] = useState(false);
-  const [orderedId, setOrderedId] = useState<number | null>(null); // 체크아웃 완료된 주문번호
 
   // 비로그인 → 로그인으로
   useEffect(() => {
@@ -43,37 +42,22 @@ export default function CartPage() {
     }
   };
 
-  // 체크아웃: 서버가 장바구니 → 주문 변환 + 장바구니 비우기 (한 번의 호출)
+  // 체크아웃: 서버가 장바구니 → 주문(PENDING) 변환 + 장바구니 비우기 (한 번의 호출).
+  // 주문은 아직 '결제 대기'일 뿐 → 곧장 결제 화면으로 보낸다(재고 차감은 결제 승인 시점).
   const checkout = async () => {
     setOrdering(true);
     setError(null);
     try {
       const order = await apiPost<Order>("/api/orders/checkout");
-      setOrderedId(order.id);
-      setCart({ memberId: order.memberId, items: [], totalQuantity: 0 }); // 비워짐 반영
+      router.push(`/orders/${order.id}/pay`); // 결제 화면으로 이동 (이 컴포넌트는 언마운트)
     } catch (e) {
       setError((e as Error).message); // 재고부족(409)·빈 장바구니(400) 등
-    } finally {
       setOrdering(false);
     }
   };
 
   if (authLoading || (user && loading)) return <p className="p-8 text-gray-500">불러오는 중…</p>;
   if (!user) return null; // 리다이렉트 중
-
-  // 체크아웃 완료 화면
-  if (orderedId !== null) {
-    return (
-      <main className="mx-auto max-w-3xl p-8 text-center">
-        <h1 className="mb-2 text-2xl font-bold">주문 완료 🎉</h1>
-        <p className="text-gray-600">주문번호 #{orderedId}</p>
-        <div className="mt-6 flex justify-center gap-4 text-sm">
-          <Link href={`/orders/${orderedId}`} className="text-blue-600 hover:underline">주문 상세 보기</Link>
-          <Link href="/products" className="text-blue-600 hover:underline">계속 쇼핑하기</Link>
-        </div>
-      </main>
-    );
-  }
 
   const items = cart?.items ?? [];
   const totalPrice = items.reduce((sum, it) => sum + it.subtotal, 0);

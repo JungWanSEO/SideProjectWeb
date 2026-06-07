@@ -5,11 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiGet, apiPost } from "@/lib/api";
 import { Order } from "@/lib/types";
+import { ORDER_STATUS_LABEL, ORDER_STATUS_BADGE } from "@/lib/orderStatus";
 import { useAuth } from "@/lib/auth";
 
-const STATUS_LABEL: Record<string, string> = { ORDERED: "주문완료", CANCELLED: "취소됨" };
-
-/** 주문 상세 (/orders/[id]). 본인 주문만(서버가 403으로 차단). ORDERED면 취소 가능. */
+/** 주문 상세 (/orders/[id]). 본인 주문만(서버가 403으로 차단). PENDING=결제/취소, PAID=취소(환불). */
 export default function OrderDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -34,7 +33,9 @@ export default function OrderDetailPage() {
   }, [user, id]);
 
   const cancel = async () => {
-    if (!confirm("주문을 취소하시겠어요?")) return;
+    // PAID 주문 취소는 환불까지 동반 → 문구로 구분
+    const msg = order?.status === "PAID" ? "결제를 취소하고 환불하시겠어요?" : "주문을 취소하시겠어요?";
+    if (!confirm(msg)) return;
     setCancelling(true);
     setError(null);
     try {
@@ -70,12 +71,8 @@ export default function OrderDetailPage() {
 
       <div className="mt-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">주문 #{order.id}</h1>
-        <span
-          className={`rounded px-2 py-1 text-xs ${
-            order.status === "CANCELLED" ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white"
-          }`}
-        >
-          {STATUS_LABEL[order.status] ?? order.status}
+        <span className={`rounded px-2 py-1 text-xs ${ORDER_STATUS_BADGE[order.status]}`}>
+          {ORDER_STATUS_LABEL[order.status]}
         </span>
       </div>
       <p className="mt-1 text-sm text-gray-400">{new Date(order.createdAt).toLocaleString("ko-KR")}</p>
@@ -101,15 +98,26 @@ export default function OrderDetailPage() {
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      {order.status === "ORDERED" && (
-        <button
-          onClick={cancel}
-          disabled={cancelling}
-          className="mt-6 rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:border-red-400 hover:text-red-500 disabled:opacity-50"
-        >
-          {cancelling ? "취소 처리 중…" : "주문 취소"}
-        </button>
-      )}
+      <div className="mt-6 flex gap-3">
+        {/* PENDING(결제대기): 결제하기 + 취소 / PAID(결제완료): 취소=환불 / CANCELLED: 버튼 없음 */}
+        {order.status === "PENDING" && (
+          <Link
+            href={`/orders/${order.id}/pay`}
+            className="rounded bg-gray-900 px-4 py-2 text-sm text-white transition hover:bg-gray-700"
+          >
+            결제하기
+          </Link>
+        )}
+        {(order.status === "PENDING" || order.status === "PAID") && (
+          <button
+            onClick={cancel}
+            disabled={cancelling}
+            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:border-red-400 hover:text-red-500 disabled:opacity-50"
+          >
+            {cancelling ? "취소 처리 중…" : "주문 취소"}
+          </button>
+        )}
+      </div>
     </main>
   );
 }

@@ -67,7 +67,8 @@
 - **결제 P3** — `POST /api/payments`(모의 PG·멱등성), PaymentService 오케스트레이터(재고차감 위임), HTTP 구매 흐름 완성 (104 tests)
 
 **6일차 (06-07)**
-- **결제 P4 (취소·환불)** — 주문 취소 시 PG 환불 + Payment CANCELLED 연동. `PaymentGateway.refund` 포트, `PaymentService.cancelOrder`(결제→주문 한방향·@Transactional 원자성), 단일 취소 엔드포인트 유지 (107 tests)
+- **결제 P4 (취소·환불)** — 주문 취소 시 PG 환불 + Payment CANCELLED 연동. `PaymentGateway.refund` 포트, `PaymentService.cancelOrder`(결제→주문 한방향·@Transactional 원자성), 단일 취소 엔드포인트 유지 (107 tests). **MySQL 런타임 검증**(Flyway V1~V4·validate, 결제·환불 흐름 PASS)
+- **FE 결제·취소 화면 (P5)** — `ORDERED` 기준이라 끊겨 있던 구매 흐름 복구. 결제 화면 신설(`/orders/[id]/pay`, 멱등키 `crypto.randomUUID`), 체크아웃→PENDING→결제→PAID→취소(환불), `OrderStatus` 3상태 동기화. 브라우저 E2E 검증 PASS
 
 ---
 

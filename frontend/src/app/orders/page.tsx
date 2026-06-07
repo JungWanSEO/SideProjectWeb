@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import { OrderSummary, PageResponse } from "@/lib/types";
+import { ORDER_STATUS_LABEL, ORDER_STATUS_BADGE } from "@/lib/orderStatus";
 import { useAuth } from "@/lib/auth";
-
-const STATUS_LABEL: Record<string, string> = { ORDERED: "주문완료", CANCELLED: "취소됨" };
 
 /** 내 주문 목록 (/orders). 인증 필요. 목록은 요약(대표상품명+항목수). */
 export default function OrdersPage() {
@@ -57,12 +56,8 @@ export default function OrdersPage() {
                   <span className="text-sm text-gray-400">
                     #{o.id} · {new Date(o.createdAt).toLocaleDateString("ko-KR")}
                   </span>
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs ${
-                      o.status === "CANCELLED" ? "bg-gray-200 text-gray-500" : "bg-gray-900 text-white"
-                    }`}
-                  >
-                    {STATUS_LABEL[o.status] ?? o.status}
+                  <span className={`rounded px-2 py-0.5 text-xs ${ORDER_STATUS_BADGE[o.status]}`}>
+                    {ORDER_STATUS_LABEL[o.status]}
                   </span>
                 </div>
                 <p className="mt-2 font-medium">
