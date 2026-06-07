@@ -21,7 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * 전체 구매 흐름 통합 테스트 (@SpringBootTest + MockMvc, 보안 필터 ON, 실제 JWT 사용).
- * (ADMIN)상품등록 → (USER)가입·로그인 → 주문 → 재고차감 → 조회 → 취소 → 재고복원 → 장바구니.
+ * (ADMIN)상품등록 → (USER)가입·로그인 → 주문 → 결제(PAID) → 재고차감 → 취소 → 재고복원 → 장바구니 → 체크아웃 → 결제.
  *
  * <p>인증은 <b>httpOnly 쿠키</b> 기반: 로그인 응답의 Set-Cookie(access/refresh)를 받아 이후 요청에 그대로 재전송한다.
  */
@@ -57,7 +57,7 @@ class CommerceScenarioTest {
     }
 
     @Test
-    @DisplayName("전체 구매 흐름: ADMIN 상품등록 → USER 가입·로그인 → 주문 → 취소 → 재고복원 → 장바구니")
+    @DisplayName("전체 구매 흐름: ADMIN 상품등록 → USER 가입·로그인 → 주문 → 결제 → 취소(재고복원) → 장바구니 → 체크아웃 → 결제")
     void fullPurchaseFlow() throws Exception {
         // 0) ADMIN 시드 + 로그인 (쿠키 획득)
         memberRepository.save(Member.builder()
@@ -108,16 +108,22 @@ class CommerceScenarioTest {
                 .andReturn().getResponse().getContentAsString();
         long orderId = dataId(orderJson);
 
-        // 6) 옵션 재고 차감 확인 (10 → 7)
+        // 6) 결제(모의 PG 승인) → 201, PAID
+        mockMvc.perform(post("/api/payments")
+                        .cookie(userCookies)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderId\":" + orderId + ",\"idempotencyKey\":\"idem-order-1\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("PAID"));
+
+        // 7) 결제 후 옵션 재고 차감(10 → 7) + 주문 PAID 확인
         mockMvc.perform(get("/api/products/" + productId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.options[0].stock").value(7));
-
-        // 7) 주문 조회 (ORDERED)
         mockMvc.perform(get("/api/orders/" + orderId)
                         .cookie(userCookies))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ORDERED"));
+                .andExpect(jsonPath("$.data.status").value("PAID"));
 
         // 8) 주문 취소 → CANCELLED
         mockMvc.perform(post("/api/orders/" + orderId + "/cancel")
@@ -125,7 +131,7 @@ class CommerceScenarioTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
 
-        // 9) 옵션 재고 복원 확인 (7 → 10)
+        // 9) 결제된 주문을 취소했으므로 옵션 재고가 복원된다 (7 → 10)
         mockMvc.perform(get("/api/products/" + productId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.options[0].stock").value(10));
@@ -143,14 +149,24 @@ class CommerceScenarioTest {
                 .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"))
                 .andExpect(jsonPath("$.data.items[0].optionId").value((int) optionId));
 
-        // 11) 체크아웃: 장바구니 → 주문 + 장바구니 비우기 (한 트랜잭션)
-        mockMvc.perform(post("/api/orders/checkout")
+        // 11) 체크아웃: 장바구니 → PENDING 주문 + 장바구니 비우기 (한 트랜잭션)
+        String checkoutJson = mockMvc.perform(post("/api/orders/checkout")
                         .cookie(userCookies))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.totalPrice").value(100000))   // 50000 x 2
-                .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"));
+                .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"))
+                .andReturn().getResponse().getContentAsString();
+        long checkoutOrderId = dataId(checkoutJson);
 
-        // 12) 체크아웃 후: 장바구니 비워짐 + 재고 차감(10 → 8)
+        // 11-2) 체크아웃 주문 결제 → PAID
+        mockMvc.perform(post("/api/payments")
+                        .cookie(userCookies)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderId\":" + checkoutOrderId + ",\"idempotencyKey\":\"idem-checkout-1\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("PAID"));
+
+        // 12) 체크아웃+결제 후: 장바구니 비워짐 + 재고 차감(10 → 8)
         mockMvc.perform(get("/api/carts")
                         .cookie(userCookies))
                 .andExpect(status().isOk())

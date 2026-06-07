@@ -17,6 +17,7 @@ import com.commerce.api.order.dto.OrderResponse.OrderItemResponse;
 import com.commerce.api.order.dto.OrderSummaryResponse;
 import com.commerce.api.order.entity.OrderStatus;
 import com.commerce.api.order.service.OrderService;
+import com.commerce.api.payment.service.PaymentService;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -51,6 +52,9 @@ class OrderControllerTest {
     @MockitoBean
     private OrderService orderService;
 
+    @MockitoBean
+    private PaymentService paymentService;   // 컨트롤러가 취소를 위임하는 대상
+
     @BeforeEach
     void setAuth() {
         SecurityContextHolder.getContext().setAuthentication(
@@ -72,7 +76,7 @@ class OrderControllerTest {
     @Test
     @DisplayName("POST /api/orders - 주문 생성 성공 시 201")
     void create_success() throws Exception {
-        given(orderService.create(eq(1L), any())).willReturn(sampleOrder(OrderStatus.ORDERED));
+        given(orderService.create(eq(1L), any())).willReturn(sampleOrder(OrderStatus.PENDING));
 
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -89,12 +93,12 @@ class OrderControllerTest {
     @Test
     @DisplayName("POST /api/orders/checkout - 체크아웃 성공 시 201")
     void checkout_success() throws Exception {
-        given(orderService.checkout(eq(1L))).willReturn(sampleOrder(OrderStatus.ORDERED));
+        given(orderService.checkout(eq(1L))).willReturn(sampleOrder(OrderStatus.PENDING));
 
         mockMvc.perform(post("/api/orders/checkout"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.status").value("ORDERED"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.totalPrice").value(30000));
     }
 
@@ -114,17 +118,18 @@ class OrderControllerTest {
     @DisplayName("GET /api/orders/{id} - 조회 성공 시 200")
     void getOrder_success() throws Exception {
         given(orderService.getOrder(eq(1L), eq(1L), eq(false)))   // principal=1L, ROLE_USER → isAdmin=false
-                .willReturn(sampleOrder(OrderStatus.ORDERED));
+                .willReturn(sampleOrder(OrderStatus.PENDING));
 
         mockMvc.perform(get("/api/orders/1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ORDERED"));
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
 
     @Test
     @DisplayName("POST /api/orders/{id}/cancel - 취소 성공 시 200, 상태 CANCELLED")
     void cancel_success() throws Exception {
-        given(orderService.cancel(eq(1L), eq(1L), eq(false))).willReturn(sampleOrder(OrderStatus.CANCELLED));
+        // 컨트롤러는 취소+환불을 PaymentService.cancelOrder(memberId, orderId, admin)에 위임한다.
+        given(paymentService.cancelOrder(eq(1L), eq(1L), eq(false))).willReturn(sampleOrder(OrderStatus.CANCELLED));
 
         mockMvc.perform(post("/api/orders/1/cancel"))
                 .andExpect(status().isOk())
@@ -158,14 +163,14 @@ class OrderControllerTest {
     void getMyOrders_success() throws Exception {
         PageResponse<OrderSummaryResponse> page = new PageResponse<>(
                 List.of(new OrderSummaryResponse(
-                        1L, OrderStatus.ORDERED, 30000L, LocalDateTime.now(), "반팔티셔츠", 2)),
+                        1L, OrderStatus.PENDING, 30000L, LocalDateTime.now(), "반팔티셔츠", 2)),
                 0, 20, 1L, 1, false);
         given(orderService.getMyOrders(eq(1L), any(Pageable.class))).willReturn(page);
 
         mockMvc.perform(get("/api/orders"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.content[0].status").value("ORDERED"))
+                .andExpect(jsonPath("$.data.content[0].status").value("PENDING"))
                 .andExpect(jsonPath("$.data.content[0].representativeProductName").value("반팔티셔츠"))
                 .andExpect(jsonPath("$.data.content[0].itemCount").value(2))
                 .andExpect(jsonPath("$.data.page").value(0))

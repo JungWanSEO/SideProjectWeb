@@ -61,9 +61,8 @@ public class OrderProcessor {
     }
 
     /**
-     * 항목마다 상품 조회 → 재고 차감(@Version 낙관적 락) → 주문 시점 스냅샷 → 추가.
-     * 동시 차감 충돌 시 커밋에서 OptimisticLockingFailureException 발생(상위에서 재시도).
-     * 하나라도 실패하면 트랜잭션 전체 롤백(재고 차감도 되돌아감).
+     * 항목마다 상품(옵션)을 조회해 주문 시점 스냅샷(상품명·사이즈·가격)을 남기고 주문에 추가한다.
+     * 주문은 PENDING(결제 대기)으로 생성되며, <b>재고는 차감하지 않는다</b> — 재고 차감은 결제 승인(pay) 시점.
      */
     private OrderResponse placeOrder(Long memberId, List<OrderItemRequest> items) {
         Order order = Order.create(memberId);
@@ -74,9 +73,6 @@ public class OrderProcessor {
                     .orElseThrow(() -> new BusinessException(
                             HttpStatus.NOT_FOUND,
                             "옵션을 찾을 수 없습니다. (id: " + itemRequest.optionId() + ")"));
-
-            // 해당 옵션 재고 차감 (부족 시 409 → 롤백, 동시 차감 충돌은 옵션 @Version으로 감지)
-            product.decreaseStock(itemRequest.optionId(), itemRequest.quantity());
 
             OrderItem orderItem = OrderItem.builder()
                     .productId(product.getId())
@@ -90,5 +86,26 @@ public class OrderProcessor {
         }
 
         return OrderResponse.from(orderRepository.save(order));
+    }
+
+    /**
+     * 결제 확정: 주문의 각 항목 재고를 차감(@Version 낙관적 락)하고 주문을 PAID로 만든다.
+     * 동시 차감 충돌은 커밋 시 OptimisticLockingFailureException → 상위(OrderService.pay)에서 재시도.
+     * 재고 부족이면 BusinessException(409)으로 롤백 → 주문은 PENDING으로 남는다(재결제 가능).
+     */
+    @Transactional
+    public OrderResponse pay(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."));
+
+        for (OrderItem item : order.getOrderItems()) {
+            // 루트 경유: 옵션 ID로 Product 애그리거트를 로드해 해당 옵션 재고를 차감
+            Product product = productRepository.findByOptionId(item.getOptionId())
+                    .orElseThrow(() -> new BusinessException(
+                            HttpStatus.NOT_FOUND, "옵션을 찾을 수 없습니다. (id: " + item.getOptionId() + ")"));
+            product.decreaseStock(item.getOptionId(), item.getQuantity());
+        }
+        order.markPaid();   // PENDING → PAID
+        return OrderResponse.from(order);
     }
 }

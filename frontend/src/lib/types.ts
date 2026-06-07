@@ -63,7 +63,22 @@ export interface Cart {
   totalQuantity: number;
 }
 
-export type OrderStatus = "ORDERED" | "CANCELLED";
+// 결제 도입 후: 주문은 결제 대기(PENDING) → 결제 완료(PAID) / 취소(CANCELLED)
+export type OrderStatus = "PENDING" | "PAID" | "CANCELLED";
+
+// 결제 상태머신 (백엔드 PaymentStatus). READY→PAID/FAILED, PAID→CANCELLED(환불)
+export type PaymentStatus = "READY" | "PAID" | "FAILED" | "CANCELLED";
+
+/** 결제 (PaymentResponse) */
+export interface Payment {
+  id: number;
+  orderId: number;
+  amount: number;
+  status: PaymentStatus;
+  method: string;
+  pgTransactionId: string | null; // 승인 성공 시에만 채워짐
+  createdAt: string;
+}
 
 /** 주문 항목 (OrderItemResponse) — 주문 시점 스냅샷(상품명·사이즈·가격) */
 export interface OrderItem {

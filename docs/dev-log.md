@@ -60,6 +60,16 @@
 - **인증 마무리** — 401 EntryPoint / 403 핸들러 + FE 자동 refresh
 - **OAuth2 대비 Member prep** — Flyway **V2**(첫 실제 마이그레이션), provider/providerId
 
+**5일차 (06-05)**
+- **git/GitHub 정리 + 브랜드명 제거 + dev-log 월별 분리** — repo SideProjectWeb, main/dev + PR 워크플로(CONTRIBUTING.md), 무신사→패션 커머스
+- **결제 도메인 설계 합의** — 모의 PG(포트-어댑터) · 재고 차감=결제 승인 시점(OrderStatus PENDING/PAID) · 멱등성 · Redis/MQ 확장지점 (상세 architecture.md §13)
+- **결제 P1·P2** — payment 골격(상태머신·포트어댑터·V3) + 주문 흐름 전환(OrderStatus PENDING/PAID, 재고 차감→결제 시점, V4) (96 tests)
+- **결제 P3** — `POST /api/payments`(모의 PG·멱등성), PaymentService 오케스트레이터(재고차감 위임), HTTP 구매 흐름 완성 (104 tests)
+
+**6일차 (06-07)**
+- **결제 P4 (취소·환불)** — 주문 취소 시 PG 환불 + Payment CANCELLED 연동. `PaymentGateway.refund` 포트, `PaymentService.cancelOrder`(결제→주문 한방향·@Transactional 원자성), 단일 취소 엔드포인트 유지 (107 tests). **MySQL 런타임 검증**(Flyway V1~V4·validate, 결제·환불 흐름 PASS)
+- **FE 결제·취소 화면 (P5)** — `ORDERED` 기준이라 끊겨 있던 구매 흐름 복구. 결제 화면 신설(`/orders/[id]/pay`, 멱등키 `crypto.randomUUID`), 체크아웃→PENDING→결제→PAID→취소(환불), `OrderStatus` 3상태 동기화. 브라우저 E2E 검증 PASS
+
 ---
 
 ## 🧭 핵심 결정·이정표 (요약)

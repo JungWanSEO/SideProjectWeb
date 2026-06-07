@@ -51,7 +51,7 @@ public class Order extends BaseEntity {
 
     private Order(Long memberId) {
         this.memberId = memberId;
-        this.status = OrderStatus.ORDERED;
+        this.status = OrderStatus.PENDING;   // 생성 시점 = 결제 대기
         this.totalPrice = 0L;
     }
 
@@ -73,5 +73,18 @@ public class Order extends BaseEntity {
             throw new BusinessException(HttpStatus.CONFLICT, "이미 취소된 주문입니다.");
         }
         this.status = OrderStatus.CANCELLED;
+    }
+
+    /** 결제 완료 처리 (PENDING → PAID). 결제 대기 상태가 아니면 예외. */
+    public void markPaid() {
+        if (this.status != OrderStatus.PENDING) {
+            throw new BusinessException(HttpStatus.CONFLICT, "결제 대기 상태의 주문만 결제할 수 있습니다.");
+        }
+        this.status = OrderStatus.PAID;
+    }
+
+    /** 결제 완료(재고가 차감된) 주문인지 — 취소 시 재고 복원 여부 판단에 사용. */
+    public boolean isPaid() {
+        return this.status == OrderStatus.PAID;
     }
 }
