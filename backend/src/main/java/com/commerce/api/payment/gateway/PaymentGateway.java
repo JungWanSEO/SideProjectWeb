@@ -14,6 +14,15 @@ public interface PaymentGateway {
      */
     PaymentApproval approve(PaymentApprovalCommand command);
 
+    /**
+     * PG에 결제 취소(환불)를 요청한다.
+     * 승인과 마찬가지로 실패는 예외가 아니라 {@link PaymentRefund} 결과로 표현한다.
+     */
+    PaymentRefund refund(PaymentRefundCommand command);
+
     /** 승인 요청 입력. */
     record PaymentApprovalCommand(Long orderId, long amount, String idempotencyKey) {}
+
+    /** 환불 요청 입력. pgTransactionId = 승인 때 받은 원거래 ID(이 거래를 취소). */
+    record PaymentRefundCommand(Long orderId, long amount, String pgTransactionId) {}
 }

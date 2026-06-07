@@ -18,6 +18,7 @@ import com.commerce.api.payment.entity.Payment;
 import com.commerce.api.payment.entity.PaymentStatus;
 import com.commerce.api.payment.gateway.PaymentApproval;
 import com.commerce.api.payment.gateway.PaymentGateway;
+import com.commerce.api.payment.gateway.PaymentRefund;
 import com.commerce.api.payment.repository.PaymentRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -134,5 +135,56 @@ class PaymentServiceTest {
         ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(PaymentStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("취소 - PAID 주문이면 주문취소 위임 + PG환불 + 결제 CANCELLED")
+    void cancelOrder_paidOrder_refunds() {
+        given(orderService.cancel(1L, 100L, false))
+                .willReturn(order(1L, 100L, OrderStatus.CANCELLED, 30000L));
+        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        paid.markPaid("MOCK-tx-1");
+        given(paymentRepository.findByOrderIdAndStatus(1L, PaymentStatus.PAID)).willReturn(Optional.of(paid));
+        given(paymentGateway.refund(any())).willReturn(PaymentRefund.refunded("MOCK-REFUND-1"));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+
+        OrderResponse response = paymentService.cancelOrder(100L, 1L, false);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        verify(orderService).cancel(1L, 100L, false);   // 재고 복원 + 주문 CANCELLED 위임
+        verify(paymentGateway).refund(any());
+        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(PaymentStatus.CANCELLED);   // 환불 반영
+    }
+
+    @Test
+    @DisplayName("취소 - PENDING 주문(결제 없음)이면 환불 없이 주문만 취소")
+    void cancelOrder_pendingOrder_noRefund() {
+        given(orderService.cancel(1L, 100L, false))
+                .willReturn(order(1L, 100L, OrderStatus.CANCELLED, 30000L));
+        given(paymentRepository.findByOrderIdAndStatus(1L, PaymentStatus.PAID)).willReturn(Optional.empty());
+
+        OrderResponse response = paymentService.cancelOrder(100L, 1L, false);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        verify(paymentGateway, never()).refund(any());   // 환불 대상 없음
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("취소 - PG 환불 실패면 502, 결제 CANCELLED 저장 안 함(트랜잭션 롤백 대상)")
+    void cancelOrder_refundFails() {
+        given(orderService.cancel(1L, 100L, false))
+                .willReturn(order(1L, 100L, OrderStatus.CANCELLED, 30000L));
+        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        paid.markPaid("MOCK-tx-1");
+        given(paymentRepository.findByOrderIdAndStatus(1L, PaymentStatus.PAID)).willReturn(Optional.of(paid));
+        given(paymentGateway.refund(any())).willReturn(PaymentRefund.failed("PG 점검중"));
+
+        assertThatThrownBy(() -> paymentService.cancelOrder(100L, 1L, false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("환불에 실패");
+        verify(paymentRepository, never()).save(any());
     }
 }

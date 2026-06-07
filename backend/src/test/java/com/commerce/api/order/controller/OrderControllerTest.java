@@ -17,6 +17,7 @@ import com.commerce.api.order.dto.OrderResponse.OrderItemResponse;
 import com.commerce.api.order.dto.OrderSummaryResponse;
 import com.commerce.api.order.entity.OrderStatus;
 import com.commerce.api.order.service.OrderService;
+import com.commerce.api.payment.service.PaymentService;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +51,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderService orderService;
+
+    @MockitoBean
+    private PaymentService paymentService;   // 컨트롤러가 취소를 위임하는 대상
 
     @BeforeEach
     void setAuth() {
@@ -124,7 +128,8 @@ class OrderControllerTest {
     @Test
     @DisplayName("POST /api/orders/{id}/cancel - 취소 성공 시 200, 상태 CANCELLED")
     void cancel_success() throws Exception {
-        given(orderService.cancel(eq(1L), eq(1L), eq(false))).willReturn(sampleOrder(OrderStatus.CANCELLED));
+        // 컨트롤러는 취소+환불을 PaymentService.cancelOrder(memberId, orderId, admin)에 위임한다.
+        given(paymentService.cancelOrder(eq(1L), eq(1L), eq(false))).willReturn(sampleOrder(OrderStatus.CANCELLED));
 
         mockMvc.perform(post("/api/orders/1/cancel"))
                 .andExpect(status().isOk())

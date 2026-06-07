@@ -22,4 +22,12 @@ public class MockPaymentGateway implements PaymentGateway {
         String pgTransactionId = "MOCK-" + UUID.randomUUID();
         return PaymentApproval.approved(pgTransactionId);
     }
+
+    @Override
+    public PaymentRefund refund(PaymentRefundCommand command) {
+        // 모의 PG는 환불을 항상 성공으로 처리하고 가짜 환불 거래 ID를 발급한다.
+        // (실제 PG라면 원거래 ID(command.pgTransactionId)로 취소 API를 호출한다.)
+        String pgRefundId = "MOCK-REFUND-" + UUID.randomUUID();
+        return PaymentRefund.refunded(pgRefundId);
+    }
 }
