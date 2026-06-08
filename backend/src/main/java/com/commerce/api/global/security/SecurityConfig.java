@@ -82,6 +82,8 @@ public class SecurityConfig {
                         // 관리자
                         .requestMatchers(HttpMethod.POST, "/api/products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/categories", "/api/brands").hasRole("ADMIN")
+                        // 정산은 운영 업무 → 전 경로 ADMIN 전용
+                        .requestMatchers("/api/settlements/**").hasRole("ADMIN")
                         // 그 외는 인증 필요
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),

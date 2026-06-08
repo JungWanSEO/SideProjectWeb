@@ -14,6 +14,7 @@ import com.commerce.api.payment.gateway.PaymentGateway.PaymentApprovalCommand;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentRefundCommand;
 import com.commerce.api.payment.gateway.PaymentRefund;
 import com.commerce.api.payment.repository.PaymentRepository;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -116,5 +117,19 @@ public class PaymentService {
                 });
 
         return cancelled;
+    }
+
+    /**
+     * 결제 완료(PAID) 건 전체를 DTO로 반환한다 — 정산 도메인이 정산 대상 결제를 가져갈 때 쓴다.
+     *
+     * <p>settlement → payment 의존을 서비스 계층 + DTO로만 노출해(엔티티·리포지토리를 직접 안 넘김)
+     * 도메인 경계를 지킨다(add-domain 컨벤션). PaymentResponse에 정산에 필요한 amount·orderId·
+     * pgTransactionId가 모두 들어 있다.
+     */
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getPaidPayments() {
+        return paymentRepository.findByStatus(PaymentStatus.PAID).stream()
+                .map(PaymentResponse::from)
+                .toList();
     }
 }

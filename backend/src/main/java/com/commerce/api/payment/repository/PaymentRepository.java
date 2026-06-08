@@ -2,6 +2,7 @@ package com.commerce.api.payment.repository;
 
 import com.commerce.api.payment.entity.Payment;
 import com.commerce.api.payment.entity.PaymentStatus;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,6 +10,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /** 멱등키로 기존 결제 조회 — 같은 키의 중복 요청을 감지해 재실행을 막는다. */
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
+
+    /** 특정 상태의 결제 전체 조회 — 정산 배치가 PAID 결제를 모아갈 때 쓴다. */
+    List<Payment> findByStatus(PaymentStatus status);
 
     /**
      * 주문의 특정 상태 결제 조회 — 환불 시 PAID 한 건을 찾는 데 쓴다.
