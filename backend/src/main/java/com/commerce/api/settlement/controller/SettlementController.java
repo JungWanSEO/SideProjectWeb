@@ -1,0 +1,67 @@
+package com.commerce.api.settlement.controller;
+
+import com.commerce.api.global.common.ApiResponse;
+import com.commerce.api.global.common.PageResponse;
+import com.commerce.api.settlement.dto.SettlementResponse;
+import com.commerce.api.settlement.dto.SettlementRunResponse;
+import com.commerce.api.settlement.service.SettlementService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort.Direction;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 정산(Settlement) API — 전부 ADMIN 전용(SecurityConfig에서 /api/settlements/** 를 hasRole("ADMIN")).
+ *
+ * - POST /api/settlements/run         정산 배치 실행 (PAID 결제 → 정산 항목 생성)
+ * - GET  /api/settlements             정산 항목 목록 (페이지)
+ * - POST /api/settlements/{id}/payout 입금 확인 (SCHEDULED → PAID_OUT)
+ */
+@Tag(name = "정산(Settlement)", description = "정산 배치 / 조회 API (ADMIN)")
+@RestController
+@RequestMapping("/api/settlements")
+@RequiredArgsConstructor
+public class SettlementController {
+
+    private final SettlementService settlementService;
+
+    @Operation(summary = "정산 배치 실행",
+            description = "PAID 결제 중 아직 정산되지 않은 건을 모아 정산 항목(SCHEDULED)을 만든다. "
+                    + "수수료를 떼고 실입금(매출)을 계산한다. 여러 번 실행해도 중복 생성되지 않는다(멱등).")
+    @PostMapping("/run")
+    public ResponseEntity<ApiResponse<SettlementRunResponse>> run() {
+        SettlementRunResponse response = settlementService.run();
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ApiResponse.success("정산 배치를 실행했습니다.", response));
+    }
+
+    @Operation(summary = "정산 항목 목록 조회",
+            description = "정산 항목을 페이지로 조회한다. 기본 정렬은 최신순(id desc), 기본 페이지 크기는 20.")
+    @GetMapping
+    public ResponseEntity<ApiResponse<PageResponse<SettlementResponse>>> getSettlements(
+            @ParameterObject
+            @PageableDefault(size = 20, sort = "id", direction = Direction.DESC)
+            Pageable pageable) {
+        PageResponse<SettlementResponse> response = settlementService.getSettlements(pageable);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @Operation(summary = "입금 확인",
+            description = "정산 항목을 입금 완료(PAID_OUT)로 표시한다. SCHEDULED 상태에서만 가능(아니면 409), 없으면 404.")
+    @PostMapping("/{id}/payout")
+    public ResponseEntity<ApiResponse<SettlementResponse>> payout(@PathVariable Long id) {
+        SettlementResponse response = settlementService.payout(id);
+        return ResponseEntity.ok(ApiResponse.success("입금 완료로 처리했습니다.", response));
+    }
+}

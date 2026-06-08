@@ -71,6 +71,10 @@
 - **FE 결제·취소 화면 (P5)** — `ORDERED` 기준이라 끊겨 있던 구매 흐름 복구. 결제 화면 신설(`/orders/[id]/pay`, 멱등키 `crypto.randomUUID`), 체크아웃→PENDING→결제→PAID→취소(환불), `OrderStatus` 3상태 동기화. 브라우저 E2E 검증 PASS
 - **아키텍처 학습 노트(멘토 토픽)** — `docs/architecture-basics.md`(왜 아키텍처?·의존성 방향·DI·그림: 계층형 vs 헥사고날/오니언) + `docs/payment-architecture-study.md`(Payment 도메인에 적용한 before/after: Impl관습·헥사고날·Clean(HttpStatus 침투 위반)·Feign/MSA) + `docs/payment-modern-architecture.md`(옛날 동기 DLL→현대 결제: 웹훅 흐름을 우리 코드에 그림·서명/멱등/금액 3대 방어·inbound전환; 단계별 누적, 다음=대사/정산)
 
+**7일차 (06-08)**
+- **git 정리** — 결제 P1~P5 dev 병합(PR #2) 확인 + 아키텍처 노트 `docs`→dev 머지(`--no-ff`) + stale 브랜치(docs·feature/payment) 삭제. Claude가 git 직접 실행(머지/푸시) 위임 시작.
+- **정산(Settlement) P1** — 결제 심화 착수. 새 도메인 `settlement/`(SettlementEntry: gross/fee/**net=실입금**·SCHEDULED→PAID_OUT·조인키 pgTransactionId), **배치 스캔**(PAID 결제→정산 항목, T+2)·수수료 2.5%·ADMIN API(run/list/payout)·Flyway V5·멱등(payment_id UNIQUE). "매출≠결제액" 1급 모델링 (112 tests). **MySQL 런타임 검증 PASS**(Flyway V5/validate·run/payout/멱등·ADMIN 403). 다음=커밋·PR → P2 대사.
+
 ---
 
 ## 🧭 핵심 결정·이정표 (요약)
@@ -91,6 +95,6 @@
 
 ## 다음 작업 (예정)
 
-- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05).
-- 그 다음: **프론트엔드(React 개념·Next.js·디자인) 학습·폴리시**.
-- (백엔드 후보) 결제(payment) 도메인 / 옵션 추가·수정 API / 카테고리 계층화.
+- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산(settlement) P1~~ ✅(06-08).
+- **진행 중 — 결제 심화(정산·대사)**: 정산 P1 코드 완료 → **① 정산 P1 런타임 검증(MySQL, Flyway V5)** → **② P2 대사(reconciliation)**: PG 리포트 ↔ 우리 DB를 pgTransactionId로 대조·불일치 분류.
+- (그 외 후보) 프론트엔드 학습·폴리시 / 이벤트·아웃박스 / 다중 PG 전략 / 옵션 추가·수정 API / 카테고리 계층화.
