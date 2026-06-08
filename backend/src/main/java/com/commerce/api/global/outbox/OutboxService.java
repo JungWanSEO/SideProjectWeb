@@ -1,5 +1,6 @@
 package com.commerce.api.global.outbox;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,9 +23,12 @@ public class OutboxService {
         outboxRepository.save(OutboxEvent.pending(eventType, aggregateType, aggregateId, payload));
     }
 
-    /** 미발행 이벤트 배치(생성순) — 폴러가 가져간다. */
+    /**
+     * 발행 후보 배치(생성순) — 폴러가 가져간다. PENDING이면서 백오프 대기가 끝난 이벤트만 포함한다.
+     * 실제 행 잠금(중복 발행 방지)은 폴러가 건별 {@code publish}에서 SKIP LOCKED로 처리한다.
+     */
     @Transactional(readOnly = true)
     public List<OutboxEvent> findPending() {
-        return outboxRepository.findTop100ByStatusOrderByIdAsc(OutboxStatus.PENDING);
+        return outboxRepository.findDispatchable(LocalDateTime.now());
     }
 }
