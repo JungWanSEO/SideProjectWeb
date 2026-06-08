@@ -74,7 +74,8 @@
 **7일차 (06-08)**
 - **git 정리** — 결제 P1~P5 dev 병합(PR #2) 확인 + 아키텍처 노트 `docs`→dev 머지(`--no-ff`) + stale 브랜치(docs·feature/payment) 삭제. Claude가 git 직접 실행(머지/푸시) 위임 시작.
 - **정산(Settlement) P1** — 결제 심화 착수. 새 도메인 `settlement/`(SettlementEntry: gross/fee/**net=실입금**·SCHEDULED→PAID_OUT·조인키 pgTransactionId), **배치 스캔**(PAID 결제→정산 항목, T+2)·수수료 2.5%·ADMIN API(run/list/payout)·Flyway V5·멱등(payment_id UNIQUE). "매출≠결제액" 1급 모델링 (112 tests). **MySQL 런타임 검증 PASS**(Flyway V5/validate·run/payout/멱등·ADMIN 403).
-- **정산(Settlement) P2 — 대사(reconciliation)** — 두 진실의 출처(우리 정산 ↔ PG 리포트)를 `pgTransactionId`로 대조. `PaymentGateway.fetchSettlements()` 포트 + **상태 보유 Mock 원장**(독립 출처), `ReconciliationService`가 5분류(MATCHED/MISSING_IN_PG/MISSING_IN_OURS/AMOUNT_MISMATCH/STATUS_MISMATCH)→`Mismatch` 스냅샷 저장, ADMIN API(run/mismatches)·Flyway V6 (118 tests). **MySQL 런타임 검증 PASS**("정산 후 환불=STATUS_MISMATCH"·"정산 후 결제=MISSING_IN_OURS" 자연 발생). 다음=커밋·dev 머지.
+- **정산(Settlement) P2 — 대사(reconciliation)** — 두 진실의 출처(우리 정산 ↔ PG 리포트)를 `pgTransactionId`로 대조. `PaymentGateway.fetchSettlements()` 포트 + **상태 보유 Mock 원장**(독립 출처), `ReconciliationService`가 5분류(MATCHED/MISSING_IN_PG/MISSING_IN_OURS/AMOUNT_MISMATCH/STATUS_MISMATCH)→`Mismatch` 스냅샷 저장, ADMIN API(run/mismatches)·Flyway V6 (118 tests). **MySQL 런타임 검증 PASS**("정산 후 환불=STATUS_MISMATCH"·"정산 후 결제=MISSING_IN_OURS" 자연 발생).
+- **정산(Settlement) P3 — 불일치 해소(resolve) 워크플로** — 예외 큐를 검출→처리까지. `Mismatch`에 `MismatchStatus`(OPEN→RESOLVED/IGNORED)+사유, `reconcile()`이 OPEN만 스냅샷·처리된 거래키는 재대사에서 안 깨움(`alreadyHandled`), ADMIN API(resolve/ignore·status 필터)·Flyway V7 (123 tests). **MySQL 런타임 검증 PASS**(resolve/ignore 후 재대사=total 0·alreadyHandled 2, 결정 보존).
 
 ---
 
@@ -96,6 +97,6 @@
 
 ## 다음 작업 (예정)
 
-- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산(settlement) P1~~ ✅ → ~~정산 P2 대사(reconciliation)~~ ✅(06-08).
-- **결제 심화 정산·대사(P1·P2) 완료**(06-08, dev 병합·런타임 검증). 후보 P3: 대사 일자별 윈도우·불일치 해소(resolve) 워크플로 / FE 정산·대사 화면.
-- (그 외 후보) 이벤트·아웃박스 / 다중 PG 전략 / 프론트엔드 학습·폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
+- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산(settlement) P1~~ ✅ → ~~정산 P2 대사~~ ✅ → ~~정산 P3 불일치 해소~~ ✅(06-08).
+- **결제 심화 정산·대사(P1·P2·P3) 완료**(06-08, dev 병합·런타임 검증). 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)까지 한 줄.
+- (다음 후보) 대사 일자별 윈도우 / FE 정산·대사 화면 / 이벤트·아웃박스 / 다중 PG 전략 / 프론트엔드 학습·폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
