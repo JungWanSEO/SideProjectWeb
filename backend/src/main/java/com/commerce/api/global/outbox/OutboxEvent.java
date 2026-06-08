@@ -49,6 +49,12 @@ public class OutboxEvent extends BaseEntity {
     @Column(nullable = false)
     private int retryCount;
 
+    /**
+     * 다음 재시도 가능 시각(지수 백오프). null이면 즉시 발행 대상(신규 이벤트).
+     * 실패할수록 더 먼 미래로 밀려 폴러가 그 전엔 건너뛴다 → PG 장애 시 헛된 재시도 폭주를 막는다.
+     */
+    private LocalDateTime nextAttemptAt;
+
     private LocalDateTime publishedAt;
 
     @Column(length = 255)
@@ -76,13 +82,17 @@ public class OutboxEvent extends BaseEntity {
 
     /**
      * 발행 실패 기록 — 재시도 횟수를 늘리고, 최대치를 넘으면 FAILED(데드레터)로 보낸다.
-     * (FAILED가 아니면 PENDING으로 남아 다음 폴링에 재시도된다.)
+     * (FAILED가 아니면 PENDING으로 남아 {@code nextAttemptAt} 이후에 재시도된다.)
+     *
+     * @param nextAttemptAt 다음 재시도 가능 시각(지수 백오프). 데드레터로 가면 무의미하므로 PENDING일 때만 반영.
      */
-    public void recordFailure(String error, int maxRetries) {
+    public void recordFailure(String error, int maxRetries, LocalDateTime nextAttemptAt) {
         this.retryCount++;
         this.lastError = (error != null && error.length() > 255) ? error.substring(0, 255) : error;
         if (this.retryCount >= maxRetries) {
             this.status = OutboxStatus.FAILED;
+        } else {
+            this.nextAttemptAt = nextAttemptAt;
         }
     }
 }
