@@ -1,0 +1,57 @@
+package com.commerce.api.settlement.controller;
+
+import com.commerce.api.global.common.ApiResponse;
+import com.commerce.api.global.common.PageResponse;
+import com.commerce.api.settlement.dto.MismatchResponse;
+import com.commerce.api.settlement.dto.ReconciliationResult;
+import com.commerce.api.settlement.service.ReconciliationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort.Direction;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 대사(Reconciliation) API — 전부 ADMIN 전용(SecurityConfig에서 /api/reconciliations/** 를 hasRole("ADMIN")).
+ *
+ * - POST /api/reconciliations/run         대사 실행 (우리 정산 ↔ PG 리포트 대조)
+ * - GET  /api/reconciliations/mismatches  불일치 목록 (페이지)
+ */
+@Tag(name = "대사(Reconciliation)", description = "대사 실행 / 불일치 조회 API (ADMIN)")
+@RestController
+@RequestMapping("/api/reconciliations")
+@RequiredArgsConstructor
+public class ReconciliationController {
+
+    private final ReconciliationService reconciliationService;
+
+    @Operation(summary = "대사 실행",
+            description = "우리 정산 항목과 PG 정산 리포트를 거래키(pgTransactionId)로 대조해 불일치를 분류·기록한다. "
+                    + "재실행 시 이전 불일치는 비우고 현재 결과로 다시 채운다(스냅샷). 일치/불일치 건수를 요약 반환.")
+    @PostMapping("/run")
+    public ResponseEntity<ApiResponse<ReconciliationResult>> run() {
+        ReconciliationResult result = reconciliationService.reconcile();
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ApiResponse.success("대사를 실행했습니다.", result));
+    }
+
+    @Operation(summary = "불일치 목록 조회",
+            description = "직전 대사에서 찾은 불일치 항목을 페이지로 조회한다. 기본 정렬은 최신순(id desc).")
+    @GetMapping("/mismatches")
+    public ResponseEntity<ApiResponse<PageResponse<MismatchResponse>>> getMismatches(
+            @ParameterObject
+            @PageableDefault(size = 20, sort = "id", direction = Direction.DESC)
+            Pageable pageable) {
+        PageResponse<MismatchResponse> response = reconciliationService.getMismatches(pageable);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+}
