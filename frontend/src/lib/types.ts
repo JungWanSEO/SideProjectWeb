@@ -110,3 +110,62 @@ export interface OrderSummary {
   representativeProductName: string;
   itemCount: number;
 }
+
+// ───────── 정산(Settlement) — ADMIN 운영 ─────────
+
+// 정산 항목 상태 (백엔드 SettlementStatus). 정산예정 → 입금완료
+export type SettlementStatus = "SCHEDULED" | "PAID_OUT";
+
+/** 정산 항목 (SettlementResponse) — 매출 ≠ 결제액: gross/fee/net 분리 */
+export interface Settlement {
+  id: number;
+  paymentId: number;
+  orderId: number;
+  pgTransactionId: string; // 대사 조인 키
+  grossAmount: number; // 결제액
+  fee: number; // 수수료
+  netAmount: number; // 실입금 (= gross - fee)
+  status: SettlementStatus;
+  settledDate: string; // 입금 예정/완료일 (LocalDate "YYYY-MM-DD")
+  createdAt: string;
+}
+
+/** 정산 배치 실행 결과 (SettlementRunResponse) */
+export interface SettlementRunResult {
+  createdCount: number;
+  totalGrossAmount: number;
+  totalFee: number;
+  totalNetAmount: number;
+}
+
+// ───────── 대사(Reconciliation) — ADMIN 운영 ─────────
+
+// 불일치 유형 (백엔드 MismatchType)
+export type MismatchType = "MISSING_IN_PG" | "MISSING_IN_OURS" | "AMOUNT_MISMATCH" | "STATUS_MISMATCH";
+
+// 불일치 처리 상태 (백엔드 MismatchStatus). 미처리 → 처리됨/무시
+export type MismatchStatus = "OPEN" | "RESOLVED" | "IGNORED";
+
+/** 대사 불일치 항목 (MismatchResponse). ourAmount/pgAmount는 한쪽에만 있으면 null */
+export interface Mismatch {
+  id: number;
+  pgTransactionId: string;
+  type: MismatchType;
+  ourAmount: number | null;
+  pgAmount: number | null;
+  detail: string;
+  status: MismatchStatus;
+  resolutionNote: string | null;
+  createdAt: string;
+}
+
+/** 대사 실행 결과 요약 (ReconciliationResult) */
+export interface ReconciliationResult {
+  matched: number;
+  missingInPg: number;
+  missingInOurs: number;
+  amountMismatch: number;
+  statusMismatch: number;
+  totalMismatches: number;
+  alreadyHandled: number;
+}
