@@ -23,3 +23,8 @@ jwt:
   secret: test-secret-key-for-junit-only-0123456789-abcdefghij
   access-token-validity-ms: 1800000
   refresh-token-validity-ms: 1209600000
+
+# 아웃박스 폴러는 테스트 중 끈다(@Scheduled가 백그라운드로 도는 것 방지 — 발행은 단위 테스트로 검증).
+outbox:
+  relay:
+    enabled: false

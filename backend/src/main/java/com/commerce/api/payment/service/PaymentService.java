@@ -31,8 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
  * "새 트랜잭션으로 재시도"가 깨진다(낙관적 락 재시도는 트랜잭션 바깥에서 새 트랜잭션을 열어야 함).
  * 결제 저장은 {@code paymentRepository.save}가 각자 트랜잭션으로 처리한다.
  *
- * <p>※ 주문 PAID 커밋과 결제 PAID 저장 사이의 원자성(크로스 애그리거트)은 단순화했다 —
- * 운영에서는 이벤트/아웃박스로 보강한다(architecture.md §13.5).
+ * <p>결제 PAID 저장은 {@link PaymentCompletionRecorder}로 위임해 <b>결제 저장 + PAYMENT_COMPLETED 이벤트
+ * 기록을 한 트랜잭션</b>으로 묶는다(트랜잭셔널 아웃박스 — docs/event-outbox-design.md). 주문 PAID와 결제 PAID의
+ * 크로스 애그리거트 정합성은 여전히 대사(reconciliation)가 사후 검증한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,6 +42,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final OrderService orderService;
     private final PaymentGateway paymentGateway;
+    private final PaymentCompletionRecorder paymentCompletionRecorder;
 
     public PaymentResponse pay(Long memberId, PaymentRequest request) {
         // 1) 멱등성: 같은 키로 이미 처리된 결제가 있으면 재실행 없이 그 결과를 반환
@@ -78,8 +80,9 @@ public class PaymentService {
             paymentRepository.save(payment);
             throw e;   // 주문은 PENDING으로 남는다(재고 보충 후 재결제 가능)
         }
+        // 승인·재고차감 성공 → 결제 PAID 저장 + PAYMENT_COMPLETED 이벤트를 한 트랜잭션으로(아웃박스).
         payment.markPaid(approval.pgTransactionId());
-        paymentRepository.save(payment);
+        paymentCompletionRecorder.saveWithEvent(payment);
         return PaymentResponse.from(payment);
     }
 

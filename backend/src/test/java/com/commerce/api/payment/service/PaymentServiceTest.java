@@ -44,6 +44,8 @@ class PaymentServiceTest {
     private OrderService orderService;
     @Mock
     private PaymentGateway paymentGateway;
+    @Mock
+    private PaymentCompletionRecorder paymentCompletionRecorder;
 
     @InjectMocks
     private PaymentService paymentService;
@@ -62,15 +64,14 @@ class PaymentServiceTest {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
         given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
-        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
 
         PaymentResponse response = paymentService.pay(100L, request());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
         assertThat(response.pgTransactionId()).isEqualTo("MOCK-tx-1");
         assertThat(response.amount()).isEqualTo(30000L);
-        verify(orderService).pay(1L);                         // 재고 차감 + 주문 PAID 위임
-        verify(paymentRepository).save(any(Payment.class));
+        verify(orderService).pay(1L);                                   // 재고 차감 + 주문 PAID 위임
+        verify(paymentCompletionRecorder).saveWithEvent(any(Payment.class)); // 결제 저장 + 아웃박스 이벤트(한 트랜잭션)
     }
 
     @Test
