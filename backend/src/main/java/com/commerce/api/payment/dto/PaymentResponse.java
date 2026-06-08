@@ -11,6 +11,7 @@ public record PaymentResponse(
         long amount,
         PaymentStatus status,
         String method,
+        String provider,          // 결제를 처리한 PG (예: TOSS, KAKAOPAY)
         String pgTransactionId,   // 승인 성공 시에만 채워짐
         LocalDateTime createdAt
 ) {
@@ -21,6 +22,7 @@ public record PaymentResponse(
                 payment.getAmount(),
                 payment.getStatus(),
                 payment.getMethod(),
+                payment.getProvider(),
                 payment.getPgTransactionId(),
                 payment.getCreatedAt()
         );

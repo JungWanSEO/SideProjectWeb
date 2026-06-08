@@ -9,7 +9,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.commerce.api.global.exception.BusinessException;
-import com.commerce.api.payment.gateway.PaymentGateway;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PgSettlementRecord;
 import com.commerce.api.payment.gateway.PgSettlementStatus;
 import com.commerce.api.settlement.dto.MismatchResponse;
@@ -43,7 +43,7 @@ class ReconciliationServiceTest {
     @Mock
     private MismatchRepository mismatchRepository;
     @Mock
-    private PaymentGateway paymentGateway;
+    private PaymentGatewayRouter paymentGatewayRouter;
 
     @InjectMocks
     private ReconciliationService reconciliationService;
@@ -62,7 +62,7 @@ class ReconciliationServiceTest {
     @DisplayName("일치 - 양측 존재·금액·상태 동일이면 MATCHED, 불일치 0 (OPEN 스냅샷만 비움)")
     void matched() {
         given(settlementRepository.findAll()).willReturn(List.of(our("tx1", 10000)));
-        given(paymentGateway.fetchSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.PAID)));
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.PAID)));
 
         ReconciliationResult r = reconciliationService.reconcile();
 
@@ -76,7 +76,7 @@ class ReconciliationServiceTest {
     @DisplayName("MISSING_IN_PG - 우리엔 있고 PG엔 없음")
     void missingInPg() {
         given(settlementRepository.findAll()).willReturn(List.of(our("tx1", 10000)));
-        given(paymentGateway.fetchSettlements()).willReturn(List.of());
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of());
 
         ReconciliationResult r = reconciliationService.reconcile();
 
@@ -93,7 +93,7 @@ class ReconciliationServiceTest {
     @DisplayName("MISSING_IN_OURS - PG엔 있고 우리엔 없음")
     void missingInOurs() {
         given(settlementRepository.findAll()).willReturn(List.of());
-        given(paymentGateway.fetchSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.PAID)));
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.PAID)));
 
         ReconciliationResult r = reconciliationService.reconcile();
 
@@ -108,7 +108,7 @@ class ReconciliationServiceTest {
     @DisplayName("AMOUNT_MISMATCH - 양측 있으나 금액 상이")
     void amountMismatch() {
         given(settlementRepository.findAll()).willReturn(List.of(our("tx1", 10000)));
-        given(paymentGateway.fetchSettlements()).willReturn(List.of(pg("tx1", 9000, PgSettlementStatus.PAID)));
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of(pg("tx1", 9000, PgSettlementStatus.PAID)));
 
         ReconciliationResult r = reconciliationService.reconcile();
 
@@ -123,7 +123,7 @@ class ReconciliationServiceTest {
     @DisplayName("STATUS_MISMATCH - 우리는 정산했는데 PG는 환불됨(정산 후 취소분)")
     void statusMismatch() {
         given(settlementRepository.findAll()).willReturn(List.of(our("tx1", 10000)));
-        given(paymentGateway.fetchSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.REFUNDED)));
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of(pg("tx1", 10000, PgSettlementStatus.REFUNDED)));
 
         ReconciliationResult r = reconciliationService.reconcile();
 
@@ -139,7 +139,7 @@ class ReconciliationServiceTest {
                 our("tx1", 10000),   // 일치
                 our("tx2", 5000),    // STATUS_MISMATCH (아래 PG가 REFUNDED)
                 our("tx3", 3000)));  // MISSING_IN_PG (PG에 없음)
-        given(paymentGateway.fetchSettlements()).willReturn(List.of(
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of(
                 pg("tx1", 10000, PgSettlementStatus.PAID),
                 pg("tx2", 5000, PgSettlementStatus.REFUNDED),
                 pg("tx4", 4000, PgSettlementStatus.PAID)));   // MISSING_IN_OURS (우리에 없음)
@@ -159,7 +159,7 @@ class ReconciliationServiceTest {
     @DisplayName("재대사 - 이미 처리(RESOLVED/IGNORED)된 거래키는 다시 OPEN으로 안 만들고 alreadyHandled로 집계")
     void reconcile_skipsAlreadyHandled() {
         given(settlementRepository.findAll()).willReturn(List.of(our("tx1", 10000)));  // PG에 없으니 MISSING_IN_PG 후보
-        given(paymentGateway.fetchSettlements()).willReturn(List.of());
+        given(paymentGatewayRouter.fetchAllSettlements()).willReturn(List.of());
         Mismatch handled = Mismatch.of("tx1", MismatchType.MISSING_IN_PG, 10000L, null, "x");
         handled.resolve("이미 수기 처리함");
         given(mismatchRepository.findByStatusIn(any())).willReturn(List.of(handled));

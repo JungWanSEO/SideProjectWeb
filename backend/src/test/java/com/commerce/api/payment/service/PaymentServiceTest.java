@@ -18,6 +18,7 @@ import com.commerce.api.payment.entity.Payment;
 import com.commerce.api.payment.entity.PaymentStatus;
 import com.commerce.api.payment.gateway.PaymentApproval;
 import com.commerce.api.payment.gateway.PaymentGateway;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PaymentRefund;
 import com.commerce.api.payment.repository.PaymentRepository;
 import java.time.LocalDateTime;
@@ -43,7 +44,9 @@ class PaymentServiceTest {
     @Mock
     private OrderService orderService;
     @Mock
-    private PaymentGateway paymentGateway;
+    private PaymentGatewayRouter paymentGatewayRouter;
+    @Mock
+    private PaymentGateway paymentGateway;   // 라우터가 골라주는 어댑터(resolve 반환)
     @Mock
     private PaymentCompletionRecorder paymentCompletionRecorder;
 
@@ -55,7 +58,7 @@ class PaymentServiceTest {
     }
 
     private PaymentRequest request() {
-        return new PaymentRequest(1L, "key-1", "MOCK_CARD");
+        return new PaymentRequest(1L, "key-1", "MOCK_CARD", "TOSS");
     }
 
     @Test
@@ -63,12 +66,15 @@ class PaymentServiceTest {
     void pay_success() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
+        given(paymentGateway.provider()).willReturn("TOSS");
         given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
 
         PaymentResponse response = paymentService.pay(100L, request());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
         assertThat(response.pgTransactionId()).isEqualTo("MOCK-tx-1");
+        assertThat(response.provider()).isEqualTo("TOSS");
         assertThat(response.amount()).isEqualTo(30000L);
         verify(orderService).pay(1L);                                   // 재고 차감 + 주문 PAID 위임
         verify(paymentCompletionRecorder).saveWithEvent(any(Payment.class)); // 결제 저장 + 아웃박스 이벤트(한 트랜잭션)
@@ -77,15 +83,15 @@ class PaymentServiceTest {
     @Test
     @DisplayName("멱등성 - 같은 키로 이미 결제됐으면 재실행 없이 기존 결과 반환")
     void pay_idempotentReplay() {
-        Payment done = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        Payment done = Payment.ready(1L, 30000L, "MOCK_CARD", "TOSS", "key-1");
         done.markPaid("MOCK-tx-1");
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.of(done));
 
         PaymentResponse response = paymentService.pay(100L, request());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
-        verify(paymentGateway, never()).approve(any());   // 승인 재요청 없음
-        verify(orderService, never()).pay(any());          // 재고 재차감 없음
+        verify(paymentGatewayRouter, never()).resolve(any());   // PG 선택 자체를 안 함
+        verify(orderService, never()).pay(any());                // 재고 재차감 없음
     }
 
     @Test
@@ -97,7 +103,7 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.pay(100L, request()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("결제할 수 없는 주문 상태");
-        verify(paymentGateway, never()).approve(any());
+        verify(paymentGatewayRouter, never()).resolve(any());   // PG 선택·승인 안 함
         verify(orderService, never()).pay(any());
     }
 
@@ -106,6 +112,8 @@ class PaymentServiceTest {
     void pay_gatewayDeclined() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
+        given(paymentGateway.provider()).willReturn("TOSS");
         given(paymentGateway.approve(any())).willReturn(PaymentApproval.failed("한도 초과"));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -124,6 +132,8 @@ class PaymentServiceTest {
     void pay_insufficientStock() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
+        given(paymentGateway.provider()).willReturn("TOSS");
         given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
         willThrow(new BusinessException(HttpStatus.CONFLICT, "재고가 부족합니다."))
@@ -143,9 +153,10 @@ class PaymentServiceTest {
     void cancelOrder_paidOrder_refunds() {
         given(orderService.cancel(1L, 100L, false))
                 .willReturn(order(1L, 100L, OrderStatus.CANCELLED, 30000L));
-        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "TOSS", "key-1");
         paid.markPaid("MOCK-tx-1");
         given(paymentRepository.findByOrderIdAndStatus(1L, PaymentStatus.PAID)).willReturn(Optional.of(paid));
+        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);   // 환불은 저장된 PG로 라우팅
         given(paymentGateway.refund(any())).willReturn(PaymentRefund.refunded("MOCK-REFUND-1"));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -153,6 +164,7 @@ class PaymentServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
         verify(orderService).cancel(1L, 100L, false);   // 재고 복원 + 주문 CANCELLED 위임
+        verify(paymentGatewayRouter).resolve("TOSS");    // 승인한 PG로 환불 라우팅
         verify(paymentGateway).refund(any());
         ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).save(captor.capture());
@@ -169,7 +181,7 @@ class PaymentServiceTest {
         OrderResponse response = paymentService.cancelOrder(100L, 1L, false);
 
         assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
-        verify(paymentGateway, never()).refund(any());   // 환불 대상 없음
+        verify(paymentGatewayRouter, never()).resolve(any());   // 환불 대상 없음 → PG 라우팅 안 함
         verify(paymentRepository, never()).save(any());
     }
 
@@ -178,9 +190,10 @@ class PaymentServiceTest {
     void cancelOrder_refundFails() {
         given(orderService.cancel(1L, 100L, false))
                 .willReturn(order(1L, 100L, OrderStatus.CANCELLED, 30000L));
-        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "key-1");
+        Payment paid = Payment.ready(1L, 30000L, "MOCK_CARD", "TOSS", "key-1");
         paid.markPaid("MOCK-tx-1");
         given(paymentRepository.findByOrderIdAndStatus(1L, PaymentStatus.PAID)).willReturn(Optional.of(paid));
+        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
         given(paymentGateway.refund(any())).willReturn(PaymentRefund.failed("PG 점검중"));
 
         assertThatThrownBy(() -> paymentService.cancelOrder(100L, 1L, false))

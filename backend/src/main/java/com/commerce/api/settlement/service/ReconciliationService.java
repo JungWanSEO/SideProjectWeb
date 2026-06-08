@@ -2,7 +2,7 @@ package com.commerce.api.settlement.service;
 
 import com.commerce.api.global.common.PageResponse;
 import com.commerce.api.global.exception.BusinessException;
-import com.commerce.api.payment.gateway.PaymentGateway;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PgSettlementRecord;
 import com.commerce.api.payment.gateway.PgSettlementStatus;
 import com.commerce.api.settlement.dto.MismatchResponse;
@@ -29,11 +29,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 대사(reconciliation) 서비스.
  *
- * <p>두 진실의 출처 — 우리 {@link SettlementEntry}와 PG 정산 리포트({@link PaymentGateway#fetchSettlements()}) —
+ * <p>두 진실의 출처 — 우리 {@link SettlementEntry}와 PG 정산 리포트({@link PaymentGatewayRouter#fetchAllSettlements()}) —
  * 를 {@code pgTransactionId}로 매칭해 어긋남을 분류·기록(예외 큐)하고, 사람이 처리(resolve/ignore)한다.
  * .NET으로 치면 두 컬렉션을 키로 outer-join 해 교집합/차집합을 가르는 일.
  *
- * <p>PG 게이트웨이 포트를 직접 주입한다 — PG는 결제·정산이 공유하는 외부 인프라(특정 도메인 서비스가 아님).
+ * <p>PG 라우터를 통해 <b>모든 PG의 리포트를 합쳐</b> 대조한다 — PG는 결제·정산이 공유하는 외부 인프라이고,
+ * 다중 PG여도 거래 ID 프리픽스가 PG를 구분하므로 키가 겹치지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,7 +42,7 @@ public class ReconciliationService {
 
     private final SettlementRepository settlementRepository;
     private final MismatchRepository mismatchRepository;
-    private final PaymentGateway paymentGateway;
+    private final PaymentGatewayRouter paymentGatewayRouter;
 
     /**
      * 대사 실행 — 우리 정산 ↔ PG 리포트 전체를 거래키로 대조한다.
@@ -57,7 +58,7 @@ public class ReconciliationService {
     public ReconciliationResult reconcile() {
         Map<String, SettlementEntry> ours = settlementRepository.findAll().stream()
                 .collect(Collectors.toMap(SettlementEntry::getPgTransactionId, Function.identity(), (a, b) -> a));
-        Map<String, PgSettlementRecord> pg = paymentGateway.fetchSettlements().stream()
+        Map<String, PgSettlementRecord> pg = paymentGatewayRouter.fetchAllSettlements().stream()
                 .collect(Collectors.toMap(PgSettlementRecord::pgTransactionId, Function.identity(), (a, b) -> a));
 
         // 이미 처리된 거래키(RESOLVED/IGNORED) — 재대사에서 다시 OPEN으로 만들지 않는다.
