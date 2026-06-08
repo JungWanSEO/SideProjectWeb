@@ -1,5 +1,7 @@
 package com.commerce.api.payment.gateway;
 
+import java.util.List;
+
 /**
  * 결제 게이트웨이(PG) 포트 — 외부 결제 연동의 추상화(포트-어댑터).
  *
@@ -19,6 +21,12 @@ public interface PaymentGateway {
      * 승인과 마찬가지로 실패는 예외가 아니라 {@link PaymentRefund} 결과로 표현한다.
      */
     PaymentRefund refund(PaymentRefundCommand command);
+
+    /**
+     * PG 정산 리포트를 조회한다 — 대사(reconciliation)에서 우리 기록과 대조할 PG 측 진실의 출처.
+     * 실제 PG는 일자별 정산 파일/리포트를 제공하지만, 모의 단계에선 PG가 처리한 거래 전체를 돌려준다.
+     */
+    List<PgSettlementRecord> fetchSettlements();
 
     /** 승인 요청 입력. */
     record PaymentApprovalCommand(Long orderId, long amount, String idempotencyKey) {}
