@@ -77,6 +77,7 @@
 - **정산(Settlement) P2 — 대사(reconciliation)** — 두 진실의 출처(우리 정산 ↔ PG 리포트)를 `pgTransactionId`로 대조. `PaymentGateway.fetchSettlements()` 포트 + **상태 보유 Mock 원장**(독립 출처), `ReconciliationService`가 5분류(MATCHED/MISSING_IN_PG/MISSING_IN_OURS/AMOUNT_MISMATCH/STATUS_MISMATCH)→`Mismatch` 스냅샷 저장, ADMIN API(run/mismatches)·Flyway V6 (118 tests). **MySQL 런타임 검증 PASS**("정산 후 환불=STATUS_MISMATCH"·"정산 후 결제=MISSING_IN_OURS" 자연 발생).
 - **정산(Settlement) P3 — 불일치 해소(resolve) 워크플로** — 예외 큐를 검출→처리까지. `Mismatch`에 `MismatchStatus`(OPEN→RESOLVED/IGNORED)+사유, `reconcile()`이 OPEN만 스냅샷·처리된 거래키는 재대사에서 안 깨움(`alreadyHandled`), ADMIN API(resolve/ignore·status 필터)·Flyway V7 (123 tests). **MySQL 런타임 검증 PASS**(resolve/ignore 후 재대사=total 0·alreadyHandled 2, 결정 보존).
 - **FE 어드민 콘솔(정산·대사 화면)** — 스토어와 분리된 `/admin` 라우트 그룹 + 사이드바 셸. 정산 화면(배치 실행·입금 처리·gross/fee/net KPI), 대사 화면(대사 실행·불일치 테이블·resolve/ignore·상태 탭). 결정: **접근제어 3겹**(백엔드 hasRole=진짜 경계 / 프록시·WAF IP제한 / 프론트 게이팅=UX), 손수 Tailwind(shadcn 미도입). **브라우저 E2E PASS**.
+- **이벤트·아웃박스 P1** — 결제완료를 **트랜잭셔널 아웃박스**로 안정 발행(dual-write 해소). 설계노트(`event-outbox-design.md`) + 구현: `OutboxEvent`/폴러(`@Scheduled`)/`EventPublisher` 포트/`PaymentCompletionRecorder`(결제저장+이벤트 한 tx)/알림 핸들러(`NotificationLog` event_id UNIQUE=멱등)·Flyway V8·V9 (130 tests). 결정: self-invocation 회피 위해 발행/폴러를 별도 트랜잭션 빈으로, at-least-once→멱등 소비. **MySQL 런타임 검증 PASS**(결제→outbox PENDING→폴러 PUBLISHED→알림, 재발행 멱등).
 
 ---
 
@@ -98,6 +99,6 @@
 
 ## 다음 작업 (예정)
 
-- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산(settlement) P1~~ ✅ → ~~정산 P2 대사~~ ✅ → ~~정산 P3 불일치 해소~~ ✅ → ~~FE 어드민 정산·대사 화면~~ ✅(06-08).
-- **결제 심화 정산·대사(P1·P2·P3) + FE 어드민 콘솔 완료**(06-08, dev 병합·브라우저 검증). 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면까지 한 줄.
-- (다음 후보) 대사 일자별 윈도우 / 정산·대사 페이지네이션·필터 강화 / 이벤트·아웃박스 / 다중 PG 전략 / 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
+- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산 P1~P3 + 대사~~ ✅ → ~~FE 어드민 정산·대사 화면~~ ✅ → ~~이벤트·아웃박스 P1~~ ✅(06-08).
+- **결제 심화 한 줄 완성**(06-08, dev 병합·런타임 검증): 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→**결제완료 이벤트(트랜잭셔널 아웃박스)**.
+- (다음 후보) 아웃박스 P2(백오프·SKIP LOCKED·실제 MQ) / 대사 일자별 윈도우 / 다중 PG 전략 / 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
