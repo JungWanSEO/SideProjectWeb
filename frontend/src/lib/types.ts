@@ -110,3 +110,30 @@ export interface OrderSummary {
   representativeProductName: string;
   itemCount: number;
 }
+
+// ───────── 정산(Settlement) — ADMIN 운영 ─────────
+
+// 정산 항목 상태 (백엔드 SettlementStatus). 정산예정 → 입금완료
+export type SettlementStatus = "SCHEDULED" | "PAID_OUT";
+
+/** 정산 항목 (SettlementResponse) — 매출 ≠ 결제액: gross/fee/net 분리 */
+export interface Settlement {
+  id: number;
+  paymentId: number;
+  orderId: number;
+  pgTransactionId: string; // 대사 조인 키
+  grossAmount: number; // 결제액
+  fee: number; // 수수료
+  netAmount: number; // 실입금 (= gross - fee)
+  status: SettlementStatus;
+  settledDate: string; // 입금 예정/완료일 (LocalDate "YYYY-MM-DD")
+  createdAt: string;
+}
+
+/** 정산 배치 실행 결과 (SettlementRunResponse) */
+export interface SettlementRunResult {
+  createdCount: number;
+  totalGrossAmount: number;
+  totalFee: number;
+  totalNetAmount: number;
+}
