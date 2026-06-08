@@ -13,7 +13,10 @@ import { useAuth } from "@/lib/auth";
  *
  * 참고: 루트 레이아웃의 스토어 Header는 /admin 경로에서 자기 자신을 숨긴다(Header.tsx).
  */
-const NAV = [{ href: "/admin/settlements", label: "정산" }];
+const NAV = [
+  { href: "/admin/settlements", label: "정산" },
+  { href: "/admin/reconciliations", label: "대사" },
+];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -54,8 +57,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
-          {/* 대사 화면은 다음 단계 */}
-          <span className="cursor-default rounded px-3 py-2 text-sm text-gray-300">대사 (준비 중)</span>
         </nav>
       </aside>
 

@@ -137,3 +137,35 @@ export interface SettlementRunResult {
   totalFee: number;
   totalNetAmount: number;
 }
+
+// ───────── 대사(Reconciliation) — ADMIN 운영 ─────────
+
+// 불일치 유형 (백엔드 MismatchType)
+export type MismatchType = "MISSING_IN_PG" | "MISSING_IN_OURS" | "AMOUNT_MISMATCH" | "STATUS_MISMATCH";
+
+// 불일치 처리 상태 (백엔드 MismatchStatus). 미처리 → 처리됨/무시
+export type MismatchStatus = "OPEN" | "RESOLVED" | "IGNORED";
+
+/** 대사 불일치 항목 (MismatchResponse). ourAmount/pgAmount는 한쪽에만 있으면 null */
+export interface Mismatch {
+  id: number;
+  pgTransactionId: string;
+  type: MismatchType;
+  ourAmount: number | null;
+  pgAmount: number | null;
+  detail: string;
+  status: MismatchStatus;
+  resolutionNote: string | null;
+  createdAt: string;
+}
+
+/** 대사 실행 결과 요약 (ReconciliationResult) */
+export interface ReconciliationResult {
+  matched: number;
+  missingInPg: number;
+  missingInOurs: number;
+  amountMismatch: number;
+  statusMismatch: number;
+  totalMismatches: number;
+  alreadyHandled: number;
+}
