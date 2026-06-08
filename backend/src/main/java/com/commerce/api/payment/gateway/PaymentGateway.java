@@ -11,6 +11,14 @@ import java.util.List;
 public interface PaymentGateway {
 
     /**
+     * 이 어댑터가 담당하는 PG 식별자 (예: "TOSS", "KAKAOPAY").
+     *
+     * <p>{@code PaymentGatewayRouter}가 이 값으로 어댑터를 등록·선택한다 —
+     * {@code OutboxEventHandler.eventType()}으로 핸들러를 모으는 것과 같은 방식(레지스트리).
+     */
+    String provider();
+
+    /**
      * PG에 결제 승인을 요청한다.
      * 승인 실패는 예외가 아니라 {@link PaymentApproval} 결과로 표현한다(승인 여부는 정상 분기).
      */

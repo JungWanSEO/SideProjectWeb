@@ -21,5 +21,8 @@ public record PaymentRequest(
         String idempotencyKey,
 
         @Schema(description = "결제수단(선택, 기본 MOCK_CARD)", example = "MOCK_CARD")
-        String method
+        String method,
+
+        @Schema(description = "결제 PG(선택, 기본 TOSS). 지원: TOSS, KAKAOPAY", example = "TOSS")
+        String provider
 ) {}

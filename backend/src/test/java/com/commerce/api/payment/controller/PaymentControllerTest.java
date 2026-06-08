@@ -55,7 +55,7 @@ class PaymentControllerTest {
     }
 
     private PaymentResponse sample(PaymentStatus status) {
-        return new PaymentResponse(1L, 1L, 30000L, status, "MOCK_CARD", "MOCK-tx-1", LocalDateTime.now());
+        return new PaymentResponse(1L, 1L, 30000L, status, "MOCK_CARD", "TOSS", "MOCK-tx-1", LocalDateTime.now());
     }
 
     @Test

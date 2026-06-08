@@ -45,23 +45,27 @@ public class Payment extends BaseEntity {
     @Column(nullable = false, length = 30)
     private String method;          // 결제수단 (모의 단계라 문자열, 예: "MOCK_CARD")
 
+    @Column(nullable = false, length = 30)
+    private String provider;        // 결제를 처리한 PG (예: "TOSS", "KAKAOPAY") — 환불·정산·대사가 같은 PG를 가리키게 함
+
     @Column(length = 100)
     private String pgTransactionId; // PG 승인 후 받는 거래 ID. 승인 전에는 null.
 
     @Column(nullable = false, unique = true, length = 80)
     private String idempotencyKey;  // 중복 결제 방지용 멱등키
 
-    private Payment(Long orderId, long amount, String method, String idempotencyKey) {
+    private Payment(Long orderId, long amount, String method, String provider, String idempotencyKey) {
         this.orderId = orderId;
         this.amount = amount;
         this.method = method;
+        this.provider = provider;
         this.idempotencyKey = idempotencyKey;
         this.status = PaymentStatus.READY;   // 생성 시점 = 승인 전(준비)
     }
 
-    /** 결제 시도 레코드 생성 (아직 승인 전 = READY). */
-    public static Payment ready(Long orderId, long amount, String method, String idempotencyKey) {
-        return new Payment(orderId, amount, method, idempotencyKey);
+    /** 결제 시도 레코드 생성 (아직 승인 전 = READY). provider = 결제를 보낼 PG. */
+    public static Payment ready(Long orderId, long amount, String method, String provider, String idempotencyKey) {
+        return new Payment(orderId, amount, method, provider, idempotencyKey);
     }
 
     /** PG 승인 성공 → PAID. (READY 상태에서만 가능) */

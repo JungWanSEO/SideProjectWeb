@@ -45,7 +45,7 @@ class SettlementServiceTest {
 
     private PaymentResponse paidPayment(Long id, Long orderId, long amount) {
         return new PaymentResponse(id, orderId, amount, PaymentStatus.PAID,
-                "MOCK_CARD", "MOCK-tx-" + id, LocalDateTime.now());
+                "MOCK_CARD", "TOSS", "MOCK-tx-" + id, LocalDateTime.now());
     }
 
     @Test

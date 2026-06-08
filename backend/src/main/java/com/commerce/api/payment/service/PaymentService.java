@@ -12,6 +12,7 @@ import com.commerce.api.payment.gateway.PaymentApproval;
 import com.commerce.api.payment.gateway.PaymentGateway;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentApprovalCommand;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentRefundCommand;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PaymentRefund;
 import com.commerce.api.payment.repository.PaymentRepository;
 import java.util.List;
@@ -41,7 +42,7 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final OrderService orderService;
-    private final PaymentGateway paymentGateway;
+    private final PaymentGatewayRouter paymentGatewayRouter;
     private final PaymentCompletionRecorder paymentCompletionRecorder;
 
     public PaymentResponse pay(Long memberId, PaymentRequest request) {
@@ -60,10 +61,13 @@ public class PaymentService {
 
         long amount = order.totalPrice();
         String method = (request.method() == null || request.method().isBlank()) ? "MOCK_CARD" : request.method();
-        Payment payment = Payment.ready(order.id(), amount, method, request.idempotencyKey());
+
+        // 클라이언트가 고른 PG로 라우팅(미지정이면 기본 PG). 지원하지 않는 PG면 여기서 400.
+        PaymentGateway gateway = paymentGatewayRouter.resolve(request.provider());
+        Payment payment = Payment.ready(order.id(), amount, method, gateway.provider(), request.idempotencyKey());
 
         // 3) PG 승인 요청 (모의)
-        PaymentApproval approval = paymentGateway.approve(
+        PaymentApproval approval = gateway.approve(
                 new PaymentApprovalCommand(order.id(), amount, request.idempotencyKey()));
         if (!approval.approved()) {
             payment.markFailed();
@@ -109,8 +113,10 @@ public class PaymentService {
         //    (주문이 CANCELLED로 바뀌면 재취소가 409로 막히므로 중복 환불도 함께 방지된다.)
         paymentRepository.findByOrderIdAndStatus(orderId, PaymentStatus.PAID)
                 .ifPresent(payment -> {
-                    PaymentRefund refund = paymentGateway.refund(new PaymentRefundCommand(
-                            orderId, payment.getAmount(), payment.getPgTransactionId()));
+                    // 환불은 반드시 승인한 그 PG로 — 결제에 저장된 provider로 라우팅한다.
+                    PaymentRefund refund = paymentGatewayRouter.resolve(payment.getProvider())
+                            .refund(new PaymentRefundCommand(
+                                    orderId, payment.getAmount(), payment.getPgTransactionId()));
                     if (!refund.refunded()) {
                         throw new BusinessException(HttpStatus.BAD_GATEWAY,
                                 "환불에 실패했습니다. (" + refund.failureReason() + ")");
