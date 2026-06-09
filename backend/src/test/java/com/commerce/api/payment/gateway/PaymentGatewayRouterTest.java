@@ -24,7 +24,7 @@ class PaymentGatewayRouterTest {
     void setUp() {
         toss = new TossMockGateway();
         kakao = new KakaoPayMockGateway();
-        router = new PaymentGatewayRouter(List.of(toss, kakao), "TOSS");
+        router = new PaymentGatewayRouter(List.of(toss, kakao), "TOSS", "");   // 미사용 PG 없음
     }
 
     @Test
@@ -68,5 +68,82 @@ class PaymentGatewayRouterTest {
                 .containsExactlyInAnyOrder(tossTx, kakaoTx);
         assertThat(tossTx).startsWith("TOSS-");
         assertThat(kakaoTx).startsWith("KAKAO-");
+    }
+
+    // ---------- 페일오버 (MPG-stretch) ----------
+
+    @Test
+    @DisplayName("페일오버 없음 - 요청 PG가 정상이면 그대로 승인(시도 1회)")
+    void failover_noneNeeded() {
+        PaymentRoutingResult r = router.approveWithFailover("TOSS", new PaymentApprovalCommand(1L, 10000L, "k1"));
+
+        assertThat(r.approval().approved()).isTrue();
+        assertThat(r.provider()).isEqualTo("TOSS");
+        assertThat(r.attempted()).containsExactly("TOSS");
+        assertThat(r.approval().pgTransactionId()).startsWith("TOSS-");
+    }
+
+    @Test
+    @DisplayName("페일오버 - 요청 PG가 설정상 down이면 건너뛰고 다른 PG로 승인")
+    void failover_onUnavailableProvider() {
+        PaymentGatewayRouter r = new PaymentGatewayRouter(List.of(toss, kakao), "TOSS", "KAKAOPAY");
+
+        PaymentRoutingResult result = r.approveWithFailover("KAKAOPAY", new PaymentApprovalCommand(1L, 10000L, "k1"));
+
+        assertThat(result.approval().approved()).isTrue();
+        assertThat(result.provider()).isEqualTo("TOSS");                 // 카카오 down → 토스로 대체
+        assertThat(result.attempted()).containsExactly("KAKAOPAY", "TOSS");
+        assertThat(result.approval().pgTransactionId()).startsWith("TOSS-");
+    }
+
+    @Test
+    @DisplayName("페일오버 - 요청 PG 승인이 거절되면 다음 PG로 승인")
+    void failover_onApprovalDeclined() {
+        FailingGateway failingToss = new FailingGateway();
+        PaymentGatewayRouter r = new PaymentGatewayRouter(List.of(failingToss, kakao), "TOSS", "");
+
+        PaymentRoutingResult result = r.approveWithFailover("TOSS", new PaymentApprovalCommand(1L, 10000L, "k1"));
+
+        assertThat(result.approval().approved()).isTrue();
+        assertThat(result.provider()).isEqualTo("KAKAOPAY");             // 토스 거절 → 카카오로 대체
+        assertThat(result.attempted()).containsExactly("TOSS", "KAKAOPAY");
+    }
+
+    @Test
+    @DisplayName("페일오버 - 모든 PG가 down이면 승인 실패 결과(시도 순서는 보존)")
+    void failover_allUnavailable() {
+        PaymentGatewayRouter r = new PaymentGatewayRouter(List.of(toss, kakao), "TOSS", "TOSS,KAKAOPAY");
+
+        PaymentRoutingResult result = r.approveWithFailover("TOSS", new PaymentApprovalCommand(1L, 10000L, "k1"));
+
+        assertThat(result.approval().approved()).isFalse();
+        assertThat(result.approval().failureReason()).contains("모든 PG 결제 실패");
+        assertThat(result.attempted()).containsExactlyInAnyOrder("TOSS", "KAKAOPAY");
+    }
+
+    @Test
+    @DisplayName("페일오버 - 미지원 PG 요청이면 폴백 전에 400(검증 먼저)")
+    void failover_unsupportedRequested() {
+        assertThatThrownBy(() -> router.approveWithFailover("PAYPAL", new PaymentApprovalCommand(1L, 10000L, "k1")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("지원하지 않는 결제 PG");
+    }
+
+    /** 승인을 항상 거절하는 토스 모의(페일오버 검증용). 환불·원장은 베이스 그대로. */
+    private static final class FailingGateway extends AbstractMockPaymentGateway {
+        @Override
+        public String provider() {
+            return "TOSS";
+        }
+
+        @Override
+        protected String idPrefix() {
+            return "TOSS";
+        }
+
+        @Override
+        public PaymentApproval approve(PaymentApprovalCommand command) {
+            return PaymentApproval.failed("PG 점검중(모의)");
+        }
     }
 }

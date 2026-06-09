@@ -8,12 +8,11 @@ import com.commerce.api.payment.dto.PaymentRequest;
 import com.commerce.api.payment.dto.PaymentResponse;
 import com.commerce.api.payment.entity.Payment;
 import com.commerce.api.payment.entity.PaymentStatus;
-import com.commerce.api.payment.gateway.PaymentApproval;
-import com.commerce.api.payment.gateway.PaymentGateway;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentApprovalCommand;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentRefundCommand;
 import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PaymentRefund;
+import com.commerce.api.payment.gateway.PaymentRoutingResult;
 import com.commerce.api.payment.repository.PaymentRepository;
 import java.util.List;
 import java.util.Optional;
@@ -62,18 +61,16 @@ public class PaymentService {
         long amount = order.totalPrice();
         String method = (request.method() == null || request.method().isBlank()) ? "MOCK_CARD" : request.method();
 
-        // 클라이언트가 고른 PG로 라우팅(미지정이면 기본 PG). 지원하지 않는 PG면 여기서 400.
-        PaymentGateway gateway = paymentGatewayRouter.resolve(request.provider());
-        Payment payment = Payment.ready(order.id(), amount, method, gateway.provider(), request.idempotencyKey());
-
-        // 3) PG 승인 요청 (모의)
-        PaymentApproval approval = gateway.approve(
-                new PaymentApprovalCommand(order.id(), amount, request.idempotencyKey()));
-        if (!approval.approved()) {
+        // 3) PG 승인 요청 — 클라이언트가 고른 PG로 시도하되, 그 PG가 장애·거절이면 다른 PG로 자동 페일오버
+        //    (MPG-stretch, 정책은 라우터에 가둠). 미지원 PG면 여기서 400. 실제 승인한 provider를 결제에 기록한다.
+        PaymentRoutingResult routed = paymentGatewayRouter.approveWithFailover(
+                request.provider(), new PaymentApprovalCommand(order.id(), amount, request.idempotencyKey()));
+        Payment payment = Payment.ready(order.id(), amount, method, routed.provider(), request.idempotencyKey());
+        if (!routed.approval().approved()) {
             payment.markFailed();
             paymentRepository.save(payment);
             throw new BusinessException(HttpStatus.PAYMENT_REQUIRED,
-                    "결제가 거절되었습니다. (" + approval.failureReason() + ")");
+                    "결제가 거절되었습니다. (" + routed.approval().failureReason() + ")");
         }
 
         // 4) 승인 성공 → 재고 차감 + 주문 PAID (낙관적 락 재시도 포함). 재고 부족 등 실패면 결제 FAILED로 기록 후 전파.
@@ -85,7 +82,7 @@ public class PaymentService {
             throw e;   // 주문은 PENDING으로 남는다(재고 보충 후 재결제 가능)
         }
         // 승인·재고차감 성공 → 결제 PAID 저장 + PAYMENT_COMPLETED 이벤트를 한 트랜잭션으로(아웃박스).
-        payment.markPaid(approval.pgTransactionId());
+        payment.markPaid(routed.approval().pgTransactionId());
         paymentCompletionRecorder.saveWithEvent(payment);
         return PaymentResponse.from(payment);
     }

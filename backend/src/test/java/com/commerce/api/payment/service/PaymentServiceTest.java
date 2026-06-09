@@ -3,6 +3,7 @@ package com.commerce.api.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -20,6 +21,7 @@ import com.commerce.api.payment.gateway.PaymentApproval;
 import com.commerce.api.payment.gateway.PaymentGateway;
 import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.gateway.PaymentRefund;
+import com.commerce.api.payment.gateway.PaymentRoutingResult;
 import com.commerce.api.payment.repository.PaymentRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -66,9 +68,8 @@ class PaymentServiceTest {
     void pay_success() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
-        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
-        given(paymentGateway.provider()).willReturn("TOSS");
-        given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
+        given(paymentGatewayRouter.approveWithFailover(eq("TOSS"), any()))
+                .willReturn(new PaymentRoutingResult("TOSS", PaymentApproval.approved("MOCK-tx-1"), List.of("TOSS")));
 
         PaymentResponse response = paymentService.pay(100L, request());
 
@@ -81,6 +82,24 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("페일오버 - 요청과 다른 PG로 승인되면 결제엔 실제 승인 PG가 기록된다(환불도 그 PG로)")
+    void pay_failoverRecordsActualProvider() {
+        given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
+        given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
+        // 요청은 KAKAOPAY였지만 라우터가 TOSS로 페일오버해 승인
+        given(paymentGatewayRouter.approveWithFailover(eq("KAKAOPAY"), any()))
+                .willReturn(new PaymentRoutingResult("TOSS", PaymentApproval.approved("TOSS-tx-9"),
+                        List.of("KAKAOPAY", "TOSS")));
+
+        PaymentResponse response = paymentService.pay(100L,
+                new PaymentRequest(1L, "key-1", "MOCK_CARD", "KAKAOPAY"));
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+        assertThat(response.provider()).isEqualTo("TOSS");             // 실제 승인 PG 기록
+        assertThat(response.pgTransactionId()).isEqualTo("TOSS-tx-9");
+    }
+
+    @Test
     @DisplayName("멱등성 - 같은 키로 이미 결제됐으면 재실행 없이 기존 결과 반환")
     void pay_idempotentReplay() {
         Payment done = Payment.ready(1L, 30000L, "MOCK_CARD", "TOSS", "key-1");
@@ -90,7 +109,7 @@ class PaymentServiceTest {
         PaymentResponse response = paymentService.pay(100L, request());
 
         assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
-        verify(paymentGatewayRouter, never()).resolve(any());   // PG 선택 자체를 안 함
+        verify(paymentGatewayRouter, never()).approveWithFailover(any(), any());   // PG 호출 자체를 안 함
         verify(orderService, never()).pay(any());                // 재고 재차감 없음
     }
 
@@ -103,7 +122,7 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.pay(100L, request()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("결제할 수 없는 주문 상태");
-        verify(paymentGatewayRouter, never()).resolve(any());   // PG 선택·승인 안 함
+        verify(paymentGatewayRouter, never()).approveWithFailover(any(), any());   // PG 호출 안 함
         verify(orderService, never()).pay(any());
     }
 
@@ -112,9 +131,8 @@ class PaymentServiceTest {
     void pay_gatewayDeclined() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
-        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
-        given(paymentGateway.provider()).willReturn("TOSS");
-        given(paymentGateway.approve(any())).willReturn(PaymentApproval.failed("한도 초과"));
+        given(paymentGatewayRouter.approveWithFailover(eq("TOSS"), any()))
+                .willReturn(new PaymentRoutingResult("TOSS", PaymentApproval.failed("한도 초과"), List.of("TOSS")));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
 
         assertThatThrownBy(() -> paymentService.pay(100L, request()))
@@ -132,9 +150,8 @@ class PaymentServiceTest {
     void pay_insufficientStock() {
         given(paymentRepository.findByIdempotencyKey("key-1")).willReturn(Optional.empty());
         given(orderService.getOrder(1L, 100L, false)).willReturn(order(1L, 100L, OrderStatus.PENDING, 30000L));
-        given(paymentGatewayRouter.resolve("TOSS")).willReturn(paymentGateway);
-        given(paymentGateway.provider()).willReturn("TOSS");
-        given(paymentGateway.approve(any())).willReturn(PaymentApproval.approved("MOCK-tx-1"));
+        given(paymentGatewayRouter.approveWithFailover(eq("TOSS"), any()))
+                .willReturn(new PaymentRoutingResult("TOSS", PaymentApproval.approved("MOCK-tx-1"), List.of("TOSS")));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
         willThrow(new BusinessException(HttpStatus.CONFLICT, "재고가 부족합니다."))
                 .given(orderService).pay(1L);
