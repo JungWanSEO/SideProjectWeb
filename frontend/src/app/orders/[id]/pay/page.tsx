@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiGet, apiPost } from "@/lib/api";
 import { Order, Payment } from "@/lib/types";
+import { PROVIDERS } from "@/lib/provider";
 import { useAuth } from "@/lib/auth";
 
 // 모의 결제수단 (백엔드는 method 문자열만 받음 — 기본 MOCK_CARD)
@@ -27,6 +28,7 @@ export default function PaymentPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [method, setMethod] = useState("MOCK_CARD");
+  const [provider, setProvider] = useState<string>("TOSS"); // 결제 PG — 라우터가 장애 시 다른 PG로 페일오버
   const [paying, setPaying] = useState(false);
 
   // 멱등키: 이 결제 화면 진입당 1개 고정 → 더블클릭/네트워크 재시도해도 같은 키 = 중복결제 방지(백엔드 멱등성과 짝).
@@ -57,7 +59,7 @@ export default function PaymentPage() {
     setPaying(true);
     setError(null);
     try {
-      await apiPost<Payment>("/api/payments", { orderId: Number(id), idempotencyKey, method });
+      await apiPost<Payment>("/api/payments", { orderId: Number(id), idempotencyKey, method, provider });
       router.push(`/orders/${id}`); // 결제 완료 → 주문 상세(PAID)
     } catch (e) {
       setError((e as Error).message); // PG 거절(402) / 결제 불가 상태(409) / 재고부족 등
@@ -99,6 +101,31 @@ export default function PaymentPage() {
         <span className="text-gray-500">결제 금액</span>
         <span className="text-xl font-bold">{order.totalPrice.toLocaleString()}원</span>
       </div>
+
+      {/* 결제 PG (다중 PG) — 고른 PG로 승인하고, 장애 시 서버가 다른 PG로 자동 페일오버 */}
+      <fieldset className="mt-6">
+        <legend className="mb-2 text-sm font-medium text-gray-600">결제 PG</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {PROVIDERS.map((pg) => (
+            <label
+              key={pg.value}
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded border p-3 text-sm transition ${
+                provider === pg.value ? "border-gray-900 bg-gray-50 font-medium" : "border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              <input
+                type="radio"
+                name="provider"
+                value={pg.value}
+                checked={provider === pg.value}
+                onChange={() => setProvider(pg.value)}
+                className="sr-only"
+              />
+              {pg.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       {/* 결제수단 */}
       <fieldset className="mt-6">

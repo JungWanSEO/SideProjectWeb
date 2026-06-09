@@ -76,6 +76,7 @@ export interface Payment {
   amount: number;
   status: PaymentStatus;
   method: string;
+  provider: string; // 실제 승인한 PG (TOSS/KAKAOPAY) — 페일오버 시 요청과 다를 수 있음
   pgTransactionId: string | null; // 승인 성공 시에만 채워짐
   createdAt: string;
 }
@@ -122,12 +123,24 @@ export interface Settlement {
   paymentId: number;
   orderId: number;
   pgTransactionId: string; // 대사 조인 키
+  provider: string; // 정산 대상 결제를 처리한 PG (MPG-2)
   grossAmount: number; // 결제액
   fee: number; // 수수료
+  feeRate: number; // 적용 수수료율 스냅샷 (예: 0.025) — MPG-3
   netAmount: number; // 실입금 (= gross - fee)
   status: SettlementStatus;
   settledDate: string; // 입금 예정/완료일 (LocalDate "YYYY-MM-DD")
   createdAt: string;
+}
+
+/** 정산 배치 결과의 PG별 분해 (SettlementRunResponse.ProviderBreakdown) — MPG-3 */
+export interface SettlementProviderBreakdown {
+  provider: string;
+  feeRate: number;
+  count: number;
+  grossAmount: number;
+  fee: number;
+  netAmount: number;
 }
 
 /** 정산 배치 실행 결과 (SettlementRunResponse) */
@@ -136,6 +149,7 @@ export interface SettlementRunResult {
   totalGrossAmount: number;
   totalFee: number;
   totalNetAmount: number;
+  byProvider: SettlementProviderBreakdown[]; // PG별 분해 — MPG-3
 }
 
 // ───────── 대사(Reconciliation) — ADMIN 운영 ─────────
@@ -150,6 +164,7 @@ export type MismatchStatus = "OPEN" | "RESOLVED" | "IGNORED";
 export interface Mismatch {
   id: number;
   pgTransactionId: string;
+  provider: string; // 어느 PG의 거래인가 (MPG-2)
   type: MismatchType;
   ourAmount: number | null;
   pgAmount: number | null;
@@ -157,6 +172,18 @@ export interface Mismatch {
   status: MismatchStatus;
   resolutionNote: string | null;
   createdAt: string;
+}
+
+/** 대사 결과의 PG별 분해 (ReconciliationResult.ProviderReconciliation) — MPG-2 */
+export interface ReconciliationProviderBreakdown {
+  provider: string;
+  matched: number;
+  missingInPg: number;
+  missingInOurs: number;
+  amountMismatch: number;
+  statusMismatch: number;
+  totalMismatches: number;
+  alreadyHandled: number;
 }
 
 /** 대사 실행 결과 요약 (ReconciliationResult) */
@@ -168,4 +195,5 @@ export interface ReconciliationResult {
   statusMismatch: number;
   totalMismatches: number;
   alreadyHandled: number;
+  byProvider: ReconciliationProviderBreakdown[]; // PG별 분해 — MPG-2
 }

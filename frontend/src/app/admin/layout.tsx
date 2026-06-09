@@ -65,9 +65,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
           <span className="text-sm text-gray-500">운영 콘솔</span>
           <div className="flex items-center gap-4 text-sm">
-            <Link href="/" className="text-gray-500 hover:underline">
-              스토어로 →
-            </Link>
             <span className="text-gray-600">{user.email}</span>
             <button onClick={() => logout()} className="text-gray-500 hover:underline">
               로그아웃
