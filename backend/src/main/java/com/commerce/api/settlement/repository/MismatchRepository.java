@@ -18,4 +18,10 @@ public interface MismatchRepository extends JpaRepository<Mismatch, Long> {
 
     /** 상태별 목록(예: OPEN만). */
     Page<Mismatch> findByStatus(MismatchStatus status, Pageable pageable);
+
+    /** PG별 목록(예: KAKAOPAY만) — MPG-2 PG 필터. */
+    Page<Mismatch> findByProvider(String provider, Pageable pageable);
+
+    /** 상태+PG 둘 다 필터(예: KAKAOPAY의 OPEN만). */
+    Page<Mismatch> findByStatusAndProvider(MismatchStatus status, String provider, Pageable pageable);
 }

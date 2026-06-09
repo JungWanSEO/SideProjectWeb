@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public record MismatchResponse(
         Long id,
         String pgTransactionId,
+        String provider,         // 어느 PG의 거래인가 (MPG-2)
         MismatchType type,
         Long ourAmount,          // 한쪽에만 있으면 null
         Long pgAmount,           // 한쪽에만 있으면 null
@@ -21,6 +22,7 @@ public record MismatchResponse(
         return new MismatchResponse(
                 m.getId(),
                 m.getPgTransactionId(),
+                m.getProvider(),
                 m.getType(),
                 m.getOurAmount(),
                 m.getPgAmount(),

@@ -37,6 +37,9 @@ public class Mismatch extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String pgTransactionId;   // 조인 키 — 어느 거래가 어긋났나
 
+    @Column(nullable = false, length = 30)
+    private String provider;          // 어느 PG의 거래인가(예: TOSS, KAKAOPAY) — MPG-2: PG별 분류·필터의 키
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MismatchType type;
@@ -55,8 +58,10 @@ public class Mismatch extends BaseEntity {
     @Column(length = 255)
     private String resolutionNote;    // 처리 사유(처리 시 기록)
 
-    private Mismatch(String pgTransactionId, MismatchType type, Long ourAmount, Long pgAmount, String detail) {
+    private Mismatch(String pgTransactionId, String provider, MismatchType type,
+                     Long ourAmount, Long pgAmount, String detail) {
         this.pgTransactionId = pgTransactionId;
+        this.provider = provider;
         this.type = type;
         this.ourAmount = ourAmount;
         this.pgAmount = pgAmount;
@@ -64,9 +69,9 @@ public class Mismatch extends BaseEntity {
         this.status = MismatchStatus.OPEN;   // 생성 시점 = 미처리
     }
 
-    public static Mismatch of(String pgTransactionId, MismatchType type,
+    public static Mismatch of(String pgTransactionId, String provider, MismatchType type,
                               Long ourAmount, Long pgAmount, String detail) {
-        return new Mismatch(pgTransactionId, type, ourAmount, pgAmount, detail);
+        return new Mismatch(pgTransactionId, provider, type, ourAmount, pgAmount, detail);
     }
 
     /** 처리 완료 → RESOLVED. (OPEN 상태에서만 가능) */
