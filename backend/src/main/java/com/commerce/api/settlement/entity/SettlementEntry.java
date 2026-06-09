@@ -48,11 +48,17 @@ public class SettlementEntry extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String pgTransactionId;  // ★ 대사(reconciliation)의 조인 키 — P2에서 PG 리포트와 매칭한다
 
+    @Column(nullable = false, length = 30)
+    private String provider;         // 정산 대상 결제를 처리한 PG (예: TOSS, KAKAOPAY) — MPG-3에서 PG별 집계의 키
+
     @Column(nullable = false)
     private long grossAmount;        // 결제액(원) = Payment.amount
 
     @Column(nullable = false)
     private long fee;                // PG 수수료(원)
+
+    @Column(nullable = false)
+    private double feeRate;          // 적용한 수수료율 스냅샷 — 요율이 나중에 바뀌어도 "그때 몇 %로 뗐나"를 보존(OrderItem.orderPrice와 같은 불변 이력)
 
     @Column(nullable = false)
     private long netAmount;          // 실입금(원) = grossAmount - fee  ← "매출 ≠ 결제액"의 핵심
@@ -64,22 +70,24 @@ public class SettlementEntry extends BaseEntity {
     @Column(nullable = false)
     private LocalDate settledDate;   // 입금(정산) 예정/완료일 (T+N)
 
-    private SettlementEntry(Long paymentId, Long orderId, String pgTransactionId,
-                            long grossAmount, long fee, LocalDate settledDate) {
+    private SettlementEntry(Long paymentId, Long orderId, String pgTransactionId, String provider,
+                            long grossAmount, long fee, double feeRate, LocalDate settledDate) {
         this.paymentId = paymentId;
         this.orderId = orderId;
         this.pgTransactionId = pgTransactionId;
+        this.provider = provider;
         this.grossAmount = grossAmount;
         this.fee = fee;
+        this.feeRate = feeRate;
         this.netAmount = grossAmount - fee;          // 실입금은 파생값 — 엔티티가 스스로 계산해 일관성 보장
         this.settledDate = settledDate;
         this.status = SettlementStatus.SCHEDULED;    // 생성 시점 = 입금 전(예정)
     }
 
-    /** 정산 예정 항목 생성 (수수료는 정책이 계산해 넘겨준다). */
-    public static SettlementEntry scheduled(Long paymentId, Long orderId, String pgTransactionId,
-                                            long grossAmount, long fee, LocalDate settledDate) {
-        return new SettlementEntry(paymentId, orderId, pgTransactionId, grossAmount, fee, settledDate);
+    /** 정산 예정 항목 생성 (수수료·요율은 정책이 PG별로 계산해 넘겨준다). */
+    public static SettlementEntry scheduled(Long paymentId, Long orderId, String pgTransactionId, String provider,
+                                            long grossAmount, long fee, double feeRate, LocalDate settledDate) {
+        return new SettlementEntry(paymentId, orderId, pgTransactionId, provider, grossAmount, fee, feeRate, settledDate);
     }
 
     /** 입금 확인 → PAID_OUT. (SCHEDULED 상태에서만 가능) */

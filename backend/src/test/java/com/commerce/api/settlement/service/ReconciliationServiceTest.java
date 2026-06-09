@@ -49,7 +49,8 @@ class ReconciliationServiceTest {
     private ReconciliationService reconciliationService;
 
     private SettlementEntry our(String pgTx, long gross) {
-        return SettlementEntry.scheduled(1L, 1L, pgTx, gross, 0L, LocalDate.now().plusDays(2));
+        // 대사는 pgTransactionId·금액으로 매칭 — provider/feeRate는 매칭에 무관해 대표값으로 채운다.
+        return SettlementEntry.scheduled(1L, 1L, pgTx, "TOSS", gross, 0L, 0.0, LocalDate.now().plusDays(2));
     }
 
     private PgSettlementRecord pg(String pgTx, long amount, PgSettlementStatus status) {

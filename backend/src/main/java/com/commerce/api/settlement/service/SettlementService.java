@@ -6,9 +6,14 @@ import com.commerce.api.payment.dto.PaymentResponse;
 import com.commerce.api.payment.service.PaymentService;
 import com.commerce.api.settlement.dto.SettlementResponse;
 import com.commerce.api.settlement.dto.SettlementRunResponse;
+import com.commerce.api.settlement.dto.SettlementRunResponse.ProviderBreakdown;
 import com.commerce.api.settlement.entity.SettlementEntry;
 import com.commerce.api.settlement.repository.SettlementRepository;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -41,6 +46,9 @@ public class SettlementService {
      * <p>단순화: 실제 배치는 "정산 대상일 윈도우"로 필터하지만, 여기선 미정산 PAID 전체를 스캔한다.
      * 또 PAID였다가 환불(CANCELLED)된 결제는 status가 PAID가 아니므로 자연히 제외된다(정산 후 취소분의
      * 상계는 대사(P2)의 몫).
+     *
+     * <p><b>MPG-3:</b> 수수료는 결제를 처리한 PG(provider)별 요율로 계산하고, 적용 요율을 항목에 스냅샷한다.
+     * 결과 요약엔 PG별 분해도 담아 "어느 PG가 얼마를 떼갔나"를 한눈에 보여준다.
      */
     @Transactional
     public SettlementRunResponse run() {
@@ -50,18 +58,24 @@ public class SettlementService {
         long totalGross = 0;
         long totalFee = 0;
         long totalNet = 0;
+        // PG별 누적 — 삽입 순서 유지(LinkedHashMap)로 응답의 PG 순서가 결제 순서를 따른다.
+        Map<String, ProviderAccumulator> byProvider = new LinkedHashMap<>();
 
         for (PaymentResponse payment : paymentService.getPaidPayments()) {
             if (settlementRepository.existsByPaymentId(payment.id())) {
                 continue;   // 이미 정산된 결제 → 건너뜀(멱등)
             }
-            long fee = SettlementPolicy.calculateFee(payment.amount());
+            String provider = payment.provider();
+            double feeRate = SettlementPolicy.rateFor(provider);
+            long fee = SettlementPolicy.calculateFee(provider, payment.amount());
             SettlementEntry entry = SettlementEntry.scheduled(
                     payment.id(),
                     payment.orderId(),
                     payment.pgTransactionId(),
+                    provider,
                     payment.amount(),
                     fee,
+                    feeRate,
                     settledDate);
             settlementRepository.save(entry);
 
@@ -69,9 +83,40 @@ public class SettlementService {
             totalGross += entry.getGrossAmount();
             totalFee += entry.getFee();
             totalNet += entry.getNetAmount();
+            byProvider.computeIfAbsent(provider, p -> new ProviderAccumulator(p, feeRate)).add(entry);
         }
 
-        return new SettlementRunResponse(created, totalGross, totalFee, totalNet);
+        List<ProviderBreakdown> breakdown = new ArrayList<>();
+        for (ProviderAccumulator acc : byProvider.values()) {
+            breakdown.add(acc.toBreakdown());
+        }
+        return new SettlementRunResponse(created, totalGross, totalFee, totalNet, breakdown);
+    }
+
+    /** PG 한 곳의 정산 누적기 — run() 안에서만 쓰는 가변 집계 도우미. */
+    private static final class ProviderAccumulator {
+        private final String provider;
+        private final double feeRate;
+        private int count;
+        private long gross;
+        private long fee;
+        private long net;
+
+        ProviderAccumulator(String provider, double feeRate) {
+            this.provider = provider;
+            this.feeRate = feeRate;
+        }
+
+        void add(SettlementEntry entry) {
+            count++;
+            gross += entry.getGrossAmount();
+            fee += entry.getFee();
+            net += entry.getNetAmount();
+        }
+
+        ProviderBreakdown toBreakdown() {
+            return new ProviderBreakdown(provider, feeRate, count, gross, fee, net);
+        }
     }
 
     /** 정산 항목 목록(페이지). 최신순은 컨트롤러의 기본 정렬로 처리. */
