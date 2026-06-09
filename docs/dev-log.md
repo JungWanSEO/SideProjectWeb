@@ -78,6 +78,11 @@
 - **정산(Settlement) P3 — 불일치 해소(resolve) 워크플로** — 예외 큐를 검출→처리까지. `Mismatch`에 `MismatchStatus`(OPEN→RESOLVED/IGNORED)+사유, `reconcile()`이 OPEN만 스냅샷·처리된 거래키는 재대사에서 안 깨움(`alreadyHandled`), ADMIN API(resolve/ignore·status 필터)·Flyway V7 (123 tests). **MySQL 런타임 검증 PASS**(resolve/ignore 후 재대사=total 0·alreadyHandled 2, 결정 보존).
 - **FE 어드민 콘솔(정산·대사 화면)** — 스토어와 분리된 `/admin` 라우트 그룹 + 사이드바 셸. 정산 화면(배치 실행·입금 처리·gross/fee/net KPI), 대사 화면(대사 실행·불일치 테이블·resolve/ignore·상태 탭). 결정: **접근제어 3겹**(백엔드 hasRole=진짜 경계 / 프록시·WAF IP제한 / 프론트 게이팅=UX), 손수 Tailwind(shadcn 미도입). **브라우저 E2E PASS**.
 - **이벤트·아웃박스 P1** — 결제완료를 **트랜잭셔널 아웃박스**로 안정 발행(dual-write 해소). 설계노트(`event-outbox-design.md`) + 구현: `OutboxEvent`/폴러(`@Scheduled`)/`EventPublisher` 포트/`PaymentCompletionRecorder`(결제저장+이벤트 한 tx)/알림 핸들러(`NotificationLog` event_id UNIQUE=멱등)·Flyway V8·V9 (130 tests). 결정: self-invocation 회피 위해 발행/폴러를 별도 트랜잭션 빈으로, at-least-once→멱등 소비. **MySQL 런타임 검증 PASS**(결제→outbox PENDING→폴러 PUBLISHED→알림, 재발행 멱등).
+- **이벤트·아웃박스 P2a** — 폴러 신뢰성·스케일아웃 보강: **지수 백오프**(2→4→8→16s·`next_attempt_at`)+데드레터, **`FOR UPDATE SKIP LOCKED`** 행 클레임(다중 폴러 중복 발행 방지)·Flyway V10 (131 tests). 결정: 백오프 정책은 프로세서·엔티티는 저장만, SKIP LOCKED는 native(H2 미지원→MySQL 런타임으로). **MySQL 런타임 검증 PASS**(백오프 카운트다운→FAILED 데드레터·SKIP LOCKED 발행 경로).
+- **다중 PG MPG-1** — 포트-어댑터를 어댑터 2개+라우터로 증명: **토스/카카오 모의 어댑터**(공통 `AbstractMockPaymentGateway` DRY) + **`PaymentGatewayRouter`**(provider 레지스트리·null→기본·미지원 400, 환불은 저장된 provider로 라우팅), `Payment.provider`·Flyway V11, 대사도 `fetchAllSettlements()` 집계로 전환 (136 tests). 결정: 라우팅=클라이언트 선택+레지스트리(페일오버는 스트레치), provider는 String. **MySQL 런타임 검증 PASS**(KAKAO/TOSS 결제·미지원 PG 400(행 안 남김)·환불 라우팅·2 PG 대사 집계).
+
+**8일차 (06-09)**
+- **다중 PG MPG-3 — 정산 PG별 수수료율** — `SettlementPolicy`를 provider별 요율 **Map**(TOSS 2.5%·KAKAOPAY 2.8%·폴백 3.0%)으로, `SettlementEntry`에 **provider + feeRate 스냅샷**(OrderItem 가격 스냅샷 패턴), 정산 결과에 **PG별 분해**(`byProvider`), Flyway V12 (138 tests). "매출≠결제액"에 **PG 차이**를 연결. 결정: 요율 출처=상수 Map(static util 유지), feeRate=double(돈 아닌 비율). **MySQL 런타임 검증 PASS**(같은 10,000원 → TOSS 250 vs KAKAOPAY 280, V12+validate, `fee_rate` double 저장).
 
 ---
 
@@ -99,6 +104,6 @@
 
 ## 다음 작업 (예정)
 
-- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산 P1~P3 + 대사~~ ✅ → ~~FE 어드민 정산·대사 화면~~ ✅ → ~~이벤트·아웃박스 P1~~ ✅(06-08).
-- **결제 심화 한 줄 완성**(06-08, dev 병합·런타임 검증): 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→**결제완료 이벤트(트랜잭셔널 아웃박스)**.
-- (다음 후보) 아웃박스 P2(백오프·SKIP LOCKED·실제 MQ) / 대사 일자별 윈도우 / 다중 PG 전략 / 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
+- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산 P1~P3 + 대사~~ ✅ → ~~FE 어드민 정산·대사 화면~~ ✅ → ~~이벤트·아웃박스 P1~~ ✅(06-08) → ~~아웃박스 P2a(백오프·SKIP LOCKED)~~ ✅(06-08) → ~~다중 PG MPG-1(토스/카카오 라우터)~~ ✅(06-08) → **다중 PG MPG-3(정산 PG별 수수료율)** 🔨(06-09 구현·138 tests, MySQL 런타임 검증 진행).
+- **결제 심화 한 줄 완성**(06-08, dev 병합·런타임 검증): 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→결제완료 이벤트(트랜잭셔널 아웃박스)→폴러 신뢰성(백오프·SKIP LOCKED)→**다중 PG(라우터→PG별 수수료율)**.
+- (다음 후보) MPG-2(대사 PG별 강화) / MPG-stretch(라우터 페일오버) / 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 결제화면 provider 선택·어드민 정산에 PG/요율 표시 / 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
