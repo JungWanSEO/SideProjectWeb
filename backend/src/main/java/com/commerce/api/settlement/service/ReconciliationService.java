@@ -7,6 +7,7 @@ import com.commerce.api.payment.gateway.PgSettlementRecord;
 import com.commerce.api.payment.gateway.PgSettlementStatus;
 import com.commerce.api.settlement.dto.MismatchResponse;
 import com.commerce.api.settlement.dto.ReconciliationResult;
+import com.commerce.api.settlement.dto.ReconciliationResult.ProviderReconciliation;
 import com.commerce.api.settlement.entity.Mismatch;
 import com.commerce.api.settlement.entity.MismatchStatus;
 import com.commerce.api.settlement.entity.MismatchType;
@@ -17,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +72,8 @@ public class ReconciliationService {
         mismatchRepository.deleteByStatus(MismatchStatus.OPEN);   // 직전 OPEN 스냅샷만 비움(처리된 건 보존)
 
         int matched = 0, missingInPg = 0, missingInOurs = 0, amountMismatch = 0, statusMismatch = 0, alreadyHandled = 0;
+        // PG별 누적 — TreeMap이라 응답의 PG 순서가 알파벳순으로 결정적(테스트·표시 안정).
+        Map<String, ProviderAccumulator> byProvider = new TreeMap<>();
 
         Set<String> keys = new HashSet<>(ours.keySet());
         keys.addAll(pg.keySet());
@@ -77,6 +81,9 @@ public class ReconciliationService {
         for (String key : keys) {
             SettlementEntry o = ours.get(key);
             PgSettlementRecord p = pg.get(key);
+            // 거래의 PG — 우리 정산이 있으면 그 provider(MPG-3), 없으면 PG 리포트가 알려준 provider.
+            String provider = (o != null) ? o.getProvider() : p.provider();
+            ProviderAccumulator acc = byProvider.computeIfAbsent(provider, ProviderAccumulator::new);
 
             // 1) 어긋남 분류 (일치면 카운트만 하고 다음으로)
             MismatchType type;
@@ -99,29 +106,47 @@ public class ReconciliationService {
                 ourAmount = o.getGrossAmount(); pgAmount = p.amount();
                 detail = "금액 상이(수수료·부분취소 반영 차이)";
             } else {
-                matched++;
+                matched++; acc.matched++;
                 continue;
             }
 
             // 2) 이미 사람이 처리한 거래키면 다시 OPEN으로 만들지 않고 건너뜀
             if (handledKeys.contains(key)) {
-                alreadyHandled++;
+                alreadyHandled++; acc.alreadyHandled++;
                 continue;
             }
 
-            // 3) 새 OPEN 불일치 기록
-            mismatchRepository.save(Mismatch.of(key, type, ourAmount, pgAmount, detail));
+            // 3) 새 OPEN 불일치 기록 (어느 PG의 어긋남인지 함께 — MPG-2)
+            mismatchRepository.save(Mismatch.of(key, provider, type, ourAmount, pgAmount, detail));
             switch (type) {
-                case MISSING_IN_PG -> missingInPg++;
-                case MISSING_IN_OURS -> missingInOurs++;
-                case STATUS_MISMATCH -> statusMismatch++;
-                case AMOUNT_MISMATCH -> amountMismatch++;
+                case MISSING_IN_PG -> { missingInPg++; acc.missingInPg++; }
+                case MISSING_IN_OURS -> { missingInOurs++; acc.missingInOurs++; }
+                case STATUS_MISMATCH -> { statusMismatch++; acc.statusMismatch++; }
+                case AMOUNT_MISMATCH -> { amountMismatch++; acc.amountMismatch++; }
             }
         }
 
         int total = missingInPg + missingInOurs + amountMismatch + statusMismatch;
+        List<ProviderReconciliation> breakdown = byProvider.values().stream()
+                .map(ProviderAccumulator::toDto).toList();
         return new ReconciliationResult(matched, missingInPg, missingInOurs, amountMismatch, statusMismatch,
-                total, alreadyHandled);
+                total, alreadyHandled, breakdown);
+    }
+
+    /** PG 한 곳의 대사 누적기 — reconcile() 안에서만 쓰는 가변 집계 도우미. */
+    private static final class ProviderAccumulator {
+        private final String provider;
+        private int matched, missingInPg, missingInOurs, amountMismatch, statusMismatch, alreadyHandled;
+
+        ProviderAccumulator(String provider) {
+            this.provider = provider;
+        }
+
+        ProviderReconciliation toDto() {
+            int total = missingInPg + missingInOurs + amountMismatch + statusMismatch;
+            return new ProviderReconciliation(provider, matched, missingInPg, missingInOurs,
+                    amountMismatch, statusMismatch, total, alreadyHandled);
+        }
     }
 
     /** 불일치 처리(상계·보정 완료) → RESOLVED. */
@@ -145,12 +170,23 @@ public class ReconciliationService {
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "불일치 항목을 찾을 수 없습니다."));
     }
 
-    /** 불일치 항목 목록(페이지). status가 주어지면 그 상태만(예: OPEN), 없으면 전체. */
+    /**
+     * 불일치 항목 목록(페이지). status·provider는 각각 선택 필터(둘 다 없으면 전체) — MPG-2: PG별로도 본다.
+     * provider는 대문자로 정규화(저장 표기와 일치).
+     */
     @Transactional(readOnly = true)
-    public PageResponse<MismatchResponse> getMismatches(MismatchStatus status, Pageable pageable) {
-        Page<Mismatch> page = (status == null)
-                ? mismatchRepository.findAll(pageable)
-                : mismatchRepository.findByStatus(status, pageable);
+    public PageResponse<MismatchResponse> getMismatches(MismatchStatus status, String provider, Pageable pageable) {
+        String pg = (provider == null || provider.isBlank()) ? null : provider.toUpperCase();
+        Page<Mismatch> page;
+        if (status == null && pg == null) {
+            page = mismatchRepository.findAll(pageable);
+        } else if (pg == null) {
+            page = mismatchRepository.findByStatus(status, pageable);
+        } else if (status == null) {
+            page = mismatchRepository.findByProvider(pg, pageable);
+        } else {
+            page = mismatchRepository.findByStatusAndProvider(status, pg, pageable);
+        }
         return PageResponse.from(page.map(MismatchResponse::from));
     }
 }

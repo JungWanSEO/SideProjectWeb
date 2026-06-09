@@ -6,9 +6,14 @@ package com.commerce.api.payment.gateway;
  * <p>대사(reconciliation)에서 우리 {@code SettlementEntry}와 {@code pgTransactionId}로 매칭하는
  * 대상이다. PG가 진실의 한 출처고, 우리 기록이 다른 출처 — 둘을 대조해 불일치를 찾는다.
  *
+ * <p><b>MPG-2:</b> 리포트는 자신이 어느 PG의 것인지({@code provider})를 함께 싣는다 — 다중 PG를 합쳐
+ * 대조할 때 불일치를 PG별로 분류·표시하기 위함. 거래 ID 프리픽스(예: KAKAO-)와 provider(KAKAOPAY)가
+ * 다를 수 있으므로 프리픽스 파싱이 아니라 PG가 직접 알려주는 값을 쓴다.
+ *
+ * @param provider        이 거래를 처리한 PG (예: TOSS, KAKAOPAY)
  * @param pgTransactionId 거래 식별자(조인 키 — 우리 결제의 pgTransactionId와 같은 값)
  * @param amount          PG가 보고한 거래 금액(원)
  * @param status          PG 관점의 상태(PAID/REFUNDED)
  */
-public record PgSettlementRecord(String pgTransactionId, long amount, PgSettlementStatus status) {
+public record PgSettlementRecord(String provider, String pgTransactionId, long amount, PgSettlementStatus status) {
 }

@@ -54,15 +54,16 @@ public class ReconciliationController {
     }
 
     @Operation(summary = "불일치 목록 조회",
-            description = "불일치 항목을 페이지로 조회한다. status 파라미터(OPEN/RESOLVED/IGNORED)로 필터 가능, "
-                    + "없으면 전체. 기본 정렬은 최신순(id desc).")
+            description = "불일치 항목을 페이지로 조회한다. status(OPEN/RESOLVED/IGNORED)·provider(TOSS/KAKAOPAY)로 "
+                    + "각각 필터 가능(둘 다 없으면 전체). 기본 정렬은 최신순(id desc).")
     @GetMapping("/mismatches")
     public ResponseEntity<ApiResponse<PageResponse<MismatchResponse>>> getMismatches(
             @RequestParam(required = false) MismatchStatus status,
+            @RequestParam(required = false) String provider,
             @ParameterObject
             @PageableDefault(size = 20, sort = "id", direction = Direction.DESC)
             Pageable pageable) {
-        PageResponse<MismatchResponse> response = reconciliationService.getMismatches(status, pageable);
+        PageResponse<MismatchResponse> response = reconciliationService.getMismatches(status, provider, pageable);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
