@@ -29,18 +29,18 @@ export default function OrdersPage() {
       .finally(() => setLoading(false));
   }, [user]);
 
-  if (authLoading || (user && loading)) return <p className="p-8 text-gray-500">불러오는 중…</p>;
+  if (authLoading || (user && loading)) return <p className="p-12 text-center text-muted">불러오는 중…</p>;
   if (!user) return null;
-  if (error) return <p className="p-8 text-red-600">에러: {error}</p>;
+  if (error) return <p className="p-12 text-center text-danger">에러: {error}</p>;
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-bold">주문 내역</h1>
+    <main className="mx-auto max-w-3xl px-6 py-12">
+      <h1 className="mb-8 text-3xl font-bold text-ink">주문 내역</h1>
 
       {orders.length === 0 ? (
-        <div className="text-gray-500">
-          <p>주문 내역이 없습니다.</p>
-          <Link href="/products" className="mt-2 inline-block text-blue-600 hover:underline">
+        <div className="rounded-2xl border border-line bg-paper p-12 text-center">
+          <p className="text-muted">주문 내역이 없습니다.</p>
+          <Link href="/products" className="mt-3 inline-block text-clay hover:underline">
             상품 보러가기 →
           </Link>
         </div>
@@ -50,21 +50,21 @@ export default function OrdersPage() {
             <li key={o.id}>
               <Link
                 href={`/orders/${o.id}`}
-                className="block rounded-lg border border-gray-200 p-4 transition hover:shadow-md"
+                className="block rounded-2xl border border-line bg-paper p-5 transition hover:border-clay hover:shadow-soft"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-muted">
                     #{o.id} · {new Date(o.createdAt).toLocaleDateString("ko-KR")}
                   </span>
-                  <span className={`rounded px-2 py-0.5 text-xs ${ORDER_STATUS_BADGE[o.status]}`}>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE[o.status]}`}>
                     {ORDER_STATUS_LABEL[o.status]}
                   </span>
                 </div>
-                <p className="mt-2 font-medium">
+                <p className="mt-2 font-serif text-lg text-ink">
                   {o.representativeProductName}
-                  {o.itemCount > 1 && <span className="text-gray-500"> 외 {o.itemCount - 1}건</span>}
+                  {o.itemCount > 1 && <span className="text-muted"> 외 {o.itemCount - 1}건</span>}
                 </p>
-                <p className="mt-1 font-bold">{o.totalPrice.toLocaleString()}원</p>
+                <p className="mt-1 font-medium text-ink">{o.totalPrice.toLocaleString()}원</p>
               </Link>
             </li>
           ))}

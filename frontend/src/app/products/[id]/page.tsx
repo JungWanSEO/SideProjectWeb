@@ -6,6 +6,9 @@ import Link from "next/link";
 import { apiGet, apiPost } from "@/lib/api";
 import { Cart, Product } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import ProductThumb from "@/components/ui/ProductThumb";
+import Badge from "@/components/ui/Badge";
+import { buttonClass } from "@/components/ui/Button";
 
 /**
  * 상품 상세 페이지 (/products/[id]).
@@ -53,13 +56,13 @@ export default function ProductDetailPage() {
     }
   };
 
-  if (loading) return <p className="p-8 text-gray-500">불러오는 중…</p>;
+  if (loading) return <p className="p-12 text-center text-muted">불러오는 중…</p>;
 
   if (error) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-red-600">에러: {error}</p>
-        <Link href="/products" className="mt-4 inline-block text-blue-600 hover:underline">
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <p className="text-danger">에러: {error}</p>
+        <Link href="/products" className="mt-4 inline-block text-clay hover:underline">
           ← 목록으로
         </Link>
       </main>
@@ -69,73 +72,79 @@ export default function ProductDetailPage() {
   if (!product) return null;
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <Link href="/products" className="text-sm text-gray-500 hover:underline">
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <Link href="/products" className="text-sm text-muted transition hover:text-clay">
         ← 목록으로
       </Link>
 
-      <div className="mt-4 flex items-start justify-between gap-3">
-        <div>
-          {product.brandName && <p className="text-sm text-gray-500">{product.brandName}</p>}
-          <h1 className="text-2xl font-bold">{product.name}</h1>
-          {product.categoryName && (
-            <p className="mt-1 text-sm text-gray-400">{product.categoryName}</p>
+      <div className="mt-6 grid gap-10 lg:grid-cols-2">
+        {/* 이미지 */}
+        <div className="relative">
+          <ProductThumb name={product.name} className="aspect-[4/5] w-full rounded-2xl shadow-soft" />
+          {product.status === "SOLD_OUT" && (
+            <span className="absolute left-4 top-4">
+              <Badge tone="dark">품절</Badge>
+            </span>
           )}
         </div>
-        {product.status === "SOLD_OUT" && (
-          <span className="shrink-0 rounded bg-gray-800 px-2 py-1 text-xs text-white">품절</span>
-        )}
-      </div>
 
-      <p className="mt-4 text-2xl font-bold">{product.price.toLocaleString()}원</p>
+        {/* 정보 */}
+        <div className="lg:py-4">
+          {product.brandName && (
+            <p className="text-xs uppercase tracking-[0.25em] text-clay">{product.brandName}</p>
+          )}
+          <h1 className="mt-2 font-serif text-3xl text-ink">{product.name}</h1>
+          {product.categoryName && <p className="mt-1 text-sm text-muted">{product.categoryName}</p>}
 
-      {product.description && (
-        <p className="mt-4 whitespace-pre-line text-gray-700">{product.description}</p>
-      )}
+          <p className="mt-5 text-2xl font-semibold text-ink">{product.price.toLocaleString()}원</p>
 
-      {/* 사이즈 선택: 품절은 비활성, 선택된 사이즈는 강조 */}
-      <h2 className="mb-2 mt-8 font-semibold">사이즈</h2>
-      <div className="flex flex-wrap gap-2">
-        {product.options.map((o) => {
-          const selected = o.id === selectedOptionId;
-          return (
+          {product.description && (
+            <p className="mt-5 whitespace-pre-line leading-relaxed text-ink/80">{product.description}</p>
+          )}
+
+          {/* 사이즈 선택: 품절은 비활성, 선택된 사이즈는 점토색 강조 */}
+          <h2 className="mb-2 mt-8 text-sm font-medium text-muted">사이즈</h2>
+          <div className="flex flex-wrap gap-2">
+            {product.options.map((o) => {
+              const selected = o.id === selectedOptionId;
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  disabled={o.soldOut}
+                  onClick={() => setSelectedOptionId(o.id)}
+                  className={`rounded-full border px-4 py-2 text-sm transition ${
+                    o.soldOut
+                      ? "cursor-not-allowed border-line text-line"
+                      : selected
+                        ? "border-clay bg-clay text-cream"
+                        : "border-line text-ink hover:border-clay"
+                  }`}
+                >
+                  <span className={o.soldOut ? "line-through" : ""}>{o.size}</span>
+                  <span className={`ml-2 text-xs ${selected ? "text-cream/70" : "text-muted"}`}>
+                    {o.soldOut ? "품절" : `재고 ${o.stock}`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 담기 */}
+          <div className="mt-8 flex items-center gap-3">
             <button
-              key={o.id}
               type="button"
-              disabled={o.soldOut}
-              onClick={() => setSelectedOptionId(o.id)}
-              className={`rounded-lg border px-4 py-2 text-sm transition ${
-                o.soldOut
-                  ? "cursor-not-allowed border-gray-200 text-gray-300"
-                  : selected
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-300 text-gray-700 hover:border-gray-900"
-              }`}
+              onClick={addToCart}
+              disabled={adding}
+              className={buttonClass("primary", "lg")}
             >
-              <span className={o.soldOut ? "line-through" : ""}>{o.size}</span>
-              <span className={`ml-2 text-xs ${selected ? "text-gray-300" : "text-gray-400"}`}>
-                {o.soldOut ? "품절" : `재고 ${o.stock}`}
-              </span>
+              {adding ? "담는 중…" : "장바구니 담기"}
             </button>
-          );
-        })}
+            {cartMsg && <span className="text-sm text-muted">{cartMsg}</span>}
+          </div>
+          {!user && <p className="mt-2 text-xs text-muted">담으려면 로그인이 필요합니다.</p>}
+        </div>
       </div>
-
-      {/* 담기 */}
-      <div className="mt-6 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={addToCart}
-          disabled={adding}
-          className="rounded bg-gray-900 px-6 py-3 text-white transition hover:bg-gray-700 disabled:opacity-50"
-        >
-          {adding ? "담는 중…" : "장바구니 담기"}
-        </button>
-        {cartMsg && <span className="text-sm text-gray-600">{cartMsg}</span>}
-      </div>
-      {!user && (
-        <p className="mt-2 text-xs text-gray-400">담으려면 로그인이 필요합니다.</p>
-      )}
     </main>
   );
 }

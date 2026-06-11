@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import { PageResponse, Product } from "@/lib/types";
+import ProductThumb from "@/components/ui/ProductThumb";
+import Badge from "@/components/ui/Badge";
 
 /**
  * 상품 목록 페이지 (/products).
@@ -21,51 +23,58 @@ export default function ProductsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="p-8 text-gray-500">불러오는 중…</p>;
-  if (error) return <p className="p-8 text-red-600">에러: {error}</p>;
+  if (loading) return <p className="p-12 text-center text-muted">불러오는 중…</p>;
+  if (error) return <p className="p-12 text-center text-danger">에러: {error}</p>;
 
   return (
-    <main className="mx-auto max-w-5xl p-8">
-      <h1 className="mb-6 text-2xl font-bold">상품 목록</h1>
+    <main className="mx-auto max-w-6xl px-6 py-12">
+      <header className="mb-10">
+        <span className="text-xs uppercase tracking-[0.3em] text-clay">Collection</span>
+        <h1 className="mt-2 text-3xl font-bold text-ink">전체 상품</h1>
+      </header>
 
       {products.length === 0 ? (
-        <p className="text-gray-500">상품이 없습니다.</p>
+        <p className="text-muted">상품이 없습니다.</p>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-2 gap-x-5 gap-y-10 lg:grid-cols-3">
           {products.map((p) => (
             <li key={p.id}>
-              <Link
-                href={`/products/${p.id}`}
-                className="block rounded-lg border border-gray-200 p-4 shadow-sm transition hover:shadow-md"
-              >
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="font-semibold">{p.name}</h2>
-                {p.status === "SOLD_OUT" && (
-                  <span className="shrink-0 rounded bg-gray-800 px-2 py-0.5 text-xs text-white">
-                    품절
-                  </span>
-                )}
-              </div>
+              <Link href={`/products/${p.id}`} className="group block">
+                <div className="relative overflow-hidden rounded-2xl">
+                  <ProductThumb
+                    name={p.name}
+                    className="aspect-[4/5] w-full transition duration-500 group-hover:scale-[1.03]"
+                  />
+                  {p.status === "SOLD_OUT" && (
+                    <span className="absolute left-3 top-3">
+                      <Badge tone="dark">품절</Badge>
+                    </span>
+                  )}
+                </div>
 
-              {p.brandName && <p className="text-sm text-gray-500">{p.brandName}</p>}
+                <div className="mt-3 px-0.5">
+                  {p.brandName && (
+                    <p className="text-xs uppercase tracking-wider text-muted">{p.brandName}</p>
+                  )}
+                  <h2 className="mt-1 font-serif text-lg text-ink">{p.name}</h2>
+                  <p className="mt-1 font-medium text-ink">{p.price.toLocaleString()}원</p>
 
-              <p className="mt-2 text-lg font-bold">{p.price.toLocaleString()}원</p>
-
-              {/* 사이즈 옵션 — 품절 사이즈는 취소선 */}
-              <div className="mt-3 flex flex-wrap gap-1">
-                {p.options.map((o) => (
-                  <span
-                    key={o.id}
-                    className={`rounded border px-2 py-0.5 text-xs ${
-                      o.soldOut
-                        ? "border-gray-200 text-gray-300 line-through"
-                        : "border-gray-300 text-gray-600"
-                    }`}
-                  >
-                    {o.size}
-                  </span>
-                ))}
-              </div>
+                  {/* 사이즈 옵션 — 품절 사이즈는 흐리게 취소선 */}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {p.options.map((o) => (
+                      <span
+                        key={o.id}
+                        className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                          o.soldOut
+                            ? "border-line text-line line-through"
+                            : "border-line text-muted"
+                        }`}
+                      >
+                        {o.size}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </Link>
             </li>
           ))}

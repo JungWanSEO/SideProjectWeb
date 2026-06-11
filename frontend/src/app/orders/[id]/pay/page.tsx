@@ -70,50 +70,55 @@ export default function PaymentPage() {
     }
   };
 
-  if (authLoading || (user && loading)) return <p className="p-8 text-gray-500">불러오는 중…</p>;
+  if (authLoading || (user && loading)) return <p className="p-12 text-center text-muted">불러오는 중…</p>;
   if (!user) return null;
 
   if (error && !order) {
     return (
-      <main className="mx-auto max-w-md p-8">
-        <p className="text-red-600">에러: {error}</p>
-        <Link href="/orders" className="mt-4 inline-block text-blue-600 hover:underline">← 주문 내역</Link>
+      <main className="mx-auto max-w-md px-6 py-12">
+        <p className="text-danger">에러: {error}</p>
+        <Link href="/orders" className="mt-4 inline-block text-clay hover:underline">← 주문 내역</Link>
       </main>
     );
   }
   if (!order || order.status !== "PENDING") return null; // 상세로 리다이렉트 중
 
   return (
-    <main className="mx-auto max-w-md p-8">
-      <Link href={`/orders/${id}`} className="text-sm text-gray-500 hover:underline">← 주문 상세</Link>
-      <h1 className="mt-4 text-2xl font-bold">결제</h1>
-      <p className="mt-1 text-sm text-gray-400">주문 #{order.id}</p>
+    <main className="mx-auto max-w-md px-6 py-10">
+      <Link href={`/orders/${id}`} className="text-sm text-muted transition hover:text-clay">← 주문 상세</Link>
+      <h1 className="mt-4 font-serif text-3xl text-ink">결제</h1>
+      <p className="mt-1 text-sm text-muted">주문 #{order.id}</p>
 
       {/* 주문 요약 */}
-      <ul className="mt-6 divide-y divide-gray-200 border-y border-gray-200">
-        {order.items.map((it) => (
-          <li key={it.optionId} className="flex items-center justify-between py-3 text-sm">
-            <span className="text-gray-700">
+      <ul className="mt-6 overflow-hidden rounded-2xl border border-line bg-paper">
+        {order.items.map((it, i) => (
+          <li
+            key={it.optionId}
+            className={`flex items-center justify-between px-4 py-3 text-sm ${i > 0 ? "border-t border-line" : ""}`}
+          >
+            <span className="text-ink/80">
               {it.productName} · {it.size} · {it.quantity}개
             </span>
-            <span className="font-medium">{it.subtotal.toLocaleString()}원</span>
+            <span className="font-medium text-ink">{it.subtotal.toLocaleString()}원</span>
           </li>
         ))}
       </ul>
       <div className="mt-4 flex items-center justify-between">
-        <span className="text-gray-500">결제 금액</span>
-        <span className="text-xl font-bold">{order.totalPrice.toLocaleString()}원</span>
+        <span className="text-muted">결제 금액</span>
+        <span className="text-2xl font-bold text-ink">{order.totalPrice.toLocaleString()}원</span>
       </div>
 
       {/* 결제 PG (다중 PG) — 고른 PG로 승인하고, 장애 시 서버가 다른 PG로 자동 페일오버 */}
-      <fieldset className="mt-6">
-        <legend className="mb-2 text-sm font-medium text-gray-600">결제 PG</legend>
+      <fieldset className="mt-7">
+        <legend className="mb-2 text-sm font-medium text-muted">결제 PG</legend>
         <div className="grid grid-cols-3 gap-2">
           {PG_OPTIONS.map((pg) => (
             <label
               key={pg.value}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded border p-3 text-sm transition ${
-                provider === pg.value ? "border-gray-900 bg-gray-50 font-medium" : "border-gray-200 hover:border-gray-400"
+              className={`flex cursor-pointer items-center justify-center rounded-full border px-3 py-2.5 text-center text-xs transition ${
+                provider === pg.value
+                  ? "border-clay bg-clay text-cream font-medium"
+                  : "border-line text-ink hover:border-clay"
               }`}
             >
               <input
@@ -132,12 +137,14 @@ export default function PaymentPage() {
 
       {/* 결제수단 */}
       <fieldset className="mt-6">
-        <legend className="mb-2 text-sm font-medium text-gray-600">결제수단</legend>
+        <legend className="mb-2 text-sm font-medium text-muted">결제수단</legend>
         <div className="flex flex-col gap-2">
           {METHODS.map((m) => (
             <label
               key={m.value}
-              className="flex cursor-pointer items-center gap-2 rounded border border-gray-200 p-3 text-sm hover:border-gray-400"
+              className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-3 text-sm transition ${
+                method === m.value ? "border-clay bg-clay-50" : "border-line hover:border-clay"
+              }`}
             >
               <input
                 type="radio"
@@ -145,6 +152,7 @@ export default function PaymentPage() {
                 value={m.value}
                 checked={method === m.value}
                 onChange={() => setMethod(m.value)}
+                className="accent-clay"
               />
               {m.label}
             </label>
@@ -152,16 +160,16 @@ export default function PaymentPage() {
         </div>
       </fieldset>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-sm text-danger">{error}</p>}
 
       <button
         onClick={pay}
         disabled={paying || !idempotencyKey}
-        className="mt-6 w-full rounded bg-gray-900 px-4 py-3 text-white transition hover:bg-gray-700 disabled:opacity-50"
+        className="mt-7 w-full rounded-full bg-clay px-4 py-3.5 font-medium text-cream transition hover:bg-clay-600 disabled:opacity-50"
       >
         {paying ? "결제 처리 중…" : `${order.totalPrice.toLocaleString()}원 결제하기`}
       </button>
-      <p className="mt-3 text-center text-xs text-gray-400">모의 결제 — 실제로 청구되지 않습니다.</p>
+      <p className="mt-3 text-center text-xs text-muted">모의 결제 — 실제로 청구되지 않습니다.</p>
     </main>
   );
 }
