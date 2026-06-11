@@ -129,11 +129,53 @@ class PaymentGatewayRouterTest {
                 .hasMessageContaining("지원하지 않는 결제 PG");
     }
 
+    // ---------- 비용기반 라우팅 ----------
+
+    @Test
+    @DisplayName("feeRateOf - 게이트웨이 요율 반환, 미등록/blank는 폴백(3.0%)")
+    void feeRateOf_returnsGatewayRate() {
+        assertThat(router.feeRateOf("TOSS")).isEqualTo(0.025);
+        assertThat(router.feeRateOf("kakaopay")).isEqualTo(0.028);   // 대소문자 무시
+        assertThat(router.feeRateOf("PAYPAL")).isEqualTo(PaymentGatewayRouter.DEFAULT_FEE_RATE);
+        assertThat(router.feeRateOf(null)).isEqualTo(PaymentGatewayRouter.DEFAULT_FEE_RATE);
+    }
+
+    @Test
+    @DisplayName("AUTO - 가장 싼 PG로 라우팅(요율 최소값 선택, 기본 PG 하드코딩 아님)")
+    void approveWithFailover_auto_picksCheapest() {
+        // toss 2.5% / kakao 2.8% → 둘만 있으면 TOSS가 최저
+        PaymentRoutingResult r = router.approveWithFailover("AUTO", new PaymentApprovalCommand(1L, 10000L, "k1"));
+        assertThat(r.approval().approved()).isTrue();
+        assertThat(r.provider()).isEqualTo("TOSS");
+        assertThat(r.attempted().get(0)).isEqualTo("TOSS");
+
+        // 더 싼 PG(2.0%)를 추가하면 AUTO는 그쪽으로 — 최소값을 실제로 고른다는 증거
+        PaymentGatewayRouter r2 = new PaymentGatewayRouter(List.of(toss, kakao, new CheapGateway()), "TOSS", "");
+        PaymentRoutingResult result = r2.approveWithFailover("AUTO", new PaymentApprovalCommand(1L, 10000L, "k1"));
+        assertThat(result.provider()).isEqualTo("CHEAPPAY");
+    }
+
+    @Test
+    @DisplayName("페일오버 - 비용 오름차순: 1차가 down이면 다음으로 싼 PG로 넘어간다")
+    void approveWithFailover_costOrdered() {
+        // CHEAPPAY(2.0%) down → AUTO는 1차=CHEAPPAY지만 사용 불가 → 다음으로 싼 TOSS(2.5%)로(카카오 2.8% 아님)
+        PaymentGatewayRouter r = new PaymentGatewayRouter(List.of(toss, kakao, new CheapGateway()), "TOSS", "CHEAPPAY");
+        PaymentRoutingResult result = r.approveWithFailover("AUTO", new PaymentApprovalCommand(1L, 10000L, "k1"));
+        assertThat(result.approval().approved()).isTrue();
+        assertThat(result.provider()).isEqualTo("TOSS");                 // 다음으로 싼 PG
+        assertThat(result.attempted()).containsExactly("CHEAPPAY", "TOSS");
+    }
+
     /** 승인을 항상 거절하는 토스 모의(페일오버 검증용). 환불·원장은 베이스 그대로. */
     private static final class FailingGateway extends AbstractMockPaymentGateway {
         @Override
         public String provider() {
             return "TOSS";
+        }
+
+        @Override
+        public double feeRate() {
+            return 0.025;
         }
 
         @Override
@@ -144,6 +186,24 @@ class PaymentGatewayRouterTest {
         @Override
         public PaymentApproval approve(PaymentApprovalCommand command) {
             return PaymentApproval.failed("PG 점검중(모의)");
+        }
+    }
+
+    /** 가장 싼 모의 PG(2.0%) — 비용기반 선택이 최소값을 실제로 고르는지 검증용. */
+    private static final class CheapGateway extends AbstractMockPaymentGateway {
+        @Override
+        public String provider() {
+            return "CHEAPPAY";
+        }
+
+        @Override
+        public double feeRate() {
+            return 0.020;
+        }
+
+        @Override
+        protected String idPrefix() {
+            return "CHEAP";
         }
     }
 }

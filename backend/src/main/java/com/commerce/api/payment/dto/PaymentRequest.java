@@ -23,6 +23,7 @@ public record PaymentRequest(
         @Schema(description = "결제수단(선택, 기본 MOCK_CARD)", example = "MOCK_CARD")
         String method,
 
-        @Schema(description = "결제 PG(선택, 기본 TOSS). 지원: TOSS, KAKAOPAY", example = "TOSS")
+        @Schema(description = "결제 PG(선택, 기본 TOSS). 지원: TOSS, KAKAOPAY. \"AUTO\"면 가장 싼 PG로 자동 라우팅(비용기반).",
+                example = "TOSS")
         String provider
 ) {}

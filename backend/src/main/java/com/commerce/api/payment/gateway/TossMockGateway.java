@@ -14,6 +14,11 @@ public class TossMockGateway extends AbstractMockPaymentGateway {
     }
 
     @Override
+    public double feeRate() {
+        return 0.025;   // 토스페이먼츠 2.5%
+    }
+
+    @Override
     protected String idPrefix() {
         return "TOSS";
     }

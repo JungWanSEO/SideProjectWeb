@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import com.commerce.api.global.exception.BusinessException;
 import com.commerce.api.payment.dto.PaymentResponse;
 import com.commerce.api.payment.entity.PaymentStatus;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.service.PaymentService;
 import com.commerce.api.settlement.dto.SettlementResponse;
 import com.commerce.api.settlement.dto.SettlementRunResponse;
@@ -39,6 +40,8 @@ class SettlementServiceTest {
     private SettlementRepository settlementRepository;
     @Mock
     private PaymentService paymentService;
+    @Mock
+    private PaymentGatewayRouter paymentGatewayRouter;   // 요율 단일 출처(PG) 조회
 
     @InjectMocks
     private SettlementService settlementService;
@@ -60,6 +63,7 @@ class SettlementServiceTest {
                 paidPayment(2L, 12L, 10000L)));
         given(settlementRepository.existsByPaymentId(anyLong())).willReturn(false);
         given(settlementRepository.save(any(SettlementEntry.class))).willAnswer(inv -> inv.getArgument(0));
+        given(paymentGatewayRouter.feeRateOf("TOSS")).willReturn(0.025);   // 요율 단일 출처(PG)
 
         SettlementRunResponse summary = settlementService.run();
 
@@ -93,6 +97,8 @@ class SettlementServiceTest {
                 paidPayment(3L, 13L, 20000L, "KAKAOPAY"))); // 2.8% → 560
         given(settlementRepository.existsByPaymentId(anyLong())).willReturn(false);
         given(settlementRepository.save(any(SettlementEntry.class))).willAnswer(inv -> inv.getArgument(0));
+        given(paymentGatewayRouter.feeRateOf("TOSS")).willReturn(0.025);
+        given(paymentGatewayRouter.feeRateOf("KAKAOPAY")).willReturn(0.028);
 
         SettlementRunResponse summary = settlementService.run();
 
@@ -125,9 +131,10 @@ class SettlementServiceTest {
     @DisplayName("정산 배치 - 요율표에 없는 PG는 폴백 요율(3.0%)이 적용된다")
     void run_unknownProviderUsesFallbackRate() {
         given(paymentService.getPaidPayments()).willReturn(List.of(
-                paidPayment(1L, 11L, 10000L, "PAYPAL")));   // 요율표 미등록 → DEFAULT_FEE_RATE 3.0%
+                paidPayment(1L, 11L, 10000L, "PAYPAL")));   // 미등록 PG → 라우터가 폴백 요율 3.0% 반환
         given(settlementRepository.existsByPaymentId(anyLong())).willReturn(false);
         given(settlementRepository.save(any(SettlementEntry.class))).willAnswer(inv -> inv.getArgument(0));
+        given(paymentGatewayRouter.feeRateOf("PAYPAL")).willReturn(0.030);   // 폴백(DEFAULT_FEE_RATE)
 
         SettlementRunResponse summary = settlementService.run();
 
