@@ -86,6 +86,9 @@
 - **다중 PG MPG-2 — 대사 PG별 분류/표시 강화** — 대사 불일치를 **어느 PG의 거래인지**로 분류·필터·표시. `PgSettlementRecord`에 `provider`(어댑터가 자기 `provider()` 기록 — 거래ID 프리픽스 `KAKAO-`≠provider `KAKAOPAY`라 프리픽스 파싱 불가), `Mismatch`에 provider(Flyway V13), `reconcile()`이 거래키별 provider 도출(우리=`SettlementEntry.provider`, PG측=리포트 provider)+**PG별 분해**(`byProvider`, 알파벳순), 불일치 목록에 **provider 필터**(`?provider=`, 대문자 정규화) (143 tests). **MySQL 런타임 검증 PASS**(2 PG 시나리오: TOSS matched+missingInOurs / KAKAOPAY statusMismatch, byProvider 분해·provider 필터·V13+validate).
 - **다중 PG MPG-stretch — 라우터 페일오버** — 요청 PG가 장애(설정상 down)·승인 거절이면 **다른 PG로 자동 대체**해 결제 성공률 방어. `PaymentGatewayRouter.approveWithFailover()`가 요청 PG 먼저→실패 시 나머지 PG(알파벳순) 순차 시도, **실제 승인한 PG**를 `PaymentRoutingResult`로 반환해 Payment에 기록(환불도 그 PG로). `payment.unavailable-providers`(설정/env)로 점검 PG 지정. `PaymentService.pay`는 한 줄 교체(전략은 라우터에 가둠), Flyway 불필요 (149 tests). **MySQL 런타임 검증 PASS**(KAKAOPAY down → 요청 KAKAOPAY가 TOSS로 페일오버 승인·Payment.provider=TOSS, 미지원 PG 400, WARN 로그 관측). **오답노트 스킬 신설**(`.claude/skills/mistake-log/` — 운영 함정 기록·참고).
 
+**9일차 (06-10)**
+- **FE 다중 PG 노출 + 관리자 UX 정리** — 백엔드 다중 PG(MPG-1~3)를 화면으로. 결제 화면 **PG 선택**(토스/카카오페이→`provider` 전송), 어드민 정산 **PG·요율 컬럼 + PG별 분해**, 어드민 대사 **PG 컬럼 + PG 필터 + PG별 분해**, `lib/provider.ts`·`types.ts` 보강. UX: **관리자 로그인 시 정산 직행**(`login()`이 User 반환)·어드민 콘솔 **"스토어로" 링크 제거**. `tsc`/`next lint` 클린, 브라우저 E2E 확인. (FE는 테스트 없이 타입검사+브라우저 검증 — 기존 관례)
+
 ---
 
 ## 🧭 핵심 결정·이정표 (요약)
@@ -106,6 +109,6 @@
 
 ## 다음 작업 (예정)
 
-- **보강**: ~~운영 하드닝(시크릿 env·Flyway)~~ ✅ → ~~인증 마무리(401/403·자동 refresh)~~ ✅ → ~~OAuth2 대비 Member prep(V2)~~ ✅ → ~~git init+GitHub~~ ✅(2026-06-05) → ~~결제(payment) 도메인 P1~P5~~ ✅(06-07) → ~~정산 P1~P3 + 대사~~ ✅ → ~~FE 어드민 정산·대사 화면~~ ✅ → ~~이벤트·아웃박스 P1~~ ✅(06-08) → ~~아웃박스 P2a(백오프·SKIP LOCKED)~~ ✅(06-08) → ~~다중 PG MPG-1(토스/카카오 라우터)~~ ✅(06-08) → **다중 PG MPG-3(정산 PG별 수수료율)** 🔨(06-09 구현·138 tests, MySQL 런타임 검증 진행).
-- **결제 심화 한 줄 완성**(06-08~09, dev 병합·런타임 검증): 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→결제완료 이벤트(트랜잭셔널 아웃박스)→폴러 신뢰성(백오프·SKIP LOCKED)→**다중 PG(라우터→PG별 수수료율→PG별 대사)**.
-- (다음 후보) 비용기반 라우팅(MPG-3 요율 재활용) / 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 결제화면 provider 선택·어드민 정산/대사에 PG·요율 컬럼 표시 / 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화.
+- **다중 PG 완주(06-08~10, dev 병합·런타임 검증)**: MPG-1(라우터)→MPG-3(정산 PG별 수수료율)→MPG-2(대사 PG별 분류)→MPG-stretch(라우터 페일오버)→**FE 노출**(결제 PG 선택·어드민 정산/대사 PG·요율 컬럼·관리자 UX) ✅(149 tests).
+- **결제 심화 한 줄 완성**: 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→결제완료 이벤트(트랜잭셔널 아웃박스)→폴러 신뢰성(백오프·SKIP LOCKED)→다중 PG(라우터→PG별 수수료율→PG별 대사→페일오버→화면).
+- (다음 후보) 비용기반 라우팅(MPG-3 요율 재활용) / 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화 / dev→main 승격(마일스톤).

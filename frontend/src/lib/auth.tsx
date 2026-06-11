@@ -15,7 +15,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean; // 최초 /me 확인 중 여부
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>; // 로그인한 유저 반환(역할 기반 분기용)
   logout: () => Promise<void>;
 }
 
@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 로그인 성공 시 백엔드가 쿠키를 굽고 body로 유저 정보를 준다
     const u = await apiPost<User>("/api/auth/login", { email, password });
     setUser(u);
+    return u; // 호출부가 역할(ADMIN/USER)에 따라 이동을 분기할 수 있도록 반환
   };
 
   const logout = async () => {

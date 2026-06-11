@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiPost } from "@/lib/api";
 import { PageResponse, Settlement, SettlementRunResult } from "@/lib/types";
 import { SETTLEMENT_STATUS_BADGE, SETTLEMENT_STATUS_LABEL } from "@/lib/settlementStatus";
+import { PROVIDER_BADGE, formatRate, providerLabel } from "@/lib/provider";
 import StatCard from "@/components/admin/StatCard";
 
 /**
@@ -85,6 +86,18 @@ export default function AdminSettlementsPage() {
           정산 배치 완료 — 신규 <b>{runResult.createdCount}</b>건 · 결제액{" "}
           {runResult.totalGrossAmount.toLocaleString()}원 · 수수료 {runResult.totalFee.toLocaleString()}원 · 실입금{" "}
           {runResult.totalNetAmount.toLocaleString()}원
+          {/* PG별 분해 — 같은 금액도 PG 요율에 따라 수수료가 갈린다(MPG-3) */}
+          {runResult.byProvider.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {runResult.byProvider.map((b) => (
+                <span key={b.provider} className="rounded border border-green-200 bg-white px-2 py-1 text-xs text-gray-600">
+                  <span className={`rounded px-1.5 py-0.5 ${PROVIDER_BADGE}`}>{providerLabel(b.provider)}</span>{" "}
+                  {formatRate(b.feeRate)} · {b.count}건 · 수수료 {b.fee.toLocaleString()}원 · 실입금{" "}
+                  {b.netAmount.toLocaleString()}원
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {error && (
@@ -105,9 +118,11 @@ export default function AdminSettlementsPage() {
           <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-4 py-3">ID</th>
+              <th className="px-4 py-3">PG</th>
               <th className="px-4 py-3">거래 ID</th>
               <th className="px-4 py-3 text-right">결제액</th>
               <th className="px-4 py-3 text-right">수수료</th>
+              <th className="px-4 py-3 text-right">요율</th>
               <th className="px-4 py-3 text-right">실입금</th>
               <th className="px-4 py-3">상태</th>
               <th className="px-4 py-3">입금예정일</th>
@@ -117,13 +132,13 @@ export default function AdminSettlementsPage() {
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
                   불러오는 중…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
                   정산 항목이 없습니다. “정산 배치 실행”을 눌러보세요.
                 </td>
               </tr>
@@ -131,9 +146,13 @@ export default function AdminSettlementsPage() {
               items.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400">#{s.id}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded px-2 py-0.5 text-xs ${PROVIDER_BADGE}`}>{providerLabel(s.provider)}</span>
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.pgTransactionId.slice(0, 16)}…</td>
                   <td className="px-4 py-3 text-right">{s.grossAmount.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right text-amber-600">−{s.fee.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">{formatRate(s.feeRate)}</td>
                   <td className="px-4 py-3 text-right font-medium">{s.netAmount.toLocaleString()}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded px-2 py-0.5 text-xs ${SETTLEMENT_STATUS_BADGE[s.status]}`}>

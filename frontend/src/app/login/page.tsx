@@ -18,8 +18,9 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
-      router.push("/products"); // 로그인 후 상품 목록으로
+      const u = await login(email, password);
+      // 관리자는 운영 콘솔로 바로(한 번 더 클릭 없이), 일반 사용자는 상품 목록으로
+      router.push(u.role === "ADMIN" ? "/admin/settlements" : "/products");
     } catch (err) {
       setError((err as Error).message);
     } finally {
