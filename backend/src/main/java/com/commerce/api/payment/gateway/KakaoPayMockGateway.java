@@ -14,6 +14,11 @@ public class KakaoPayMockGateway extends AbstractMockPaymentGateway {
     }
 
     @Override
+    public double feeRate() {
+        return 0.028;   // 카카오페이 2.8%
+    }
+
+    @Override
     protected String idPrefix() {
         return "KAKAO";
     }

@@ -19,6 +19,15 @@ public interface PaymentGateway {
     String provider();
 
     /**
+     * 이 PG의 수수료율 (예: 0.025 = 2.5%). <b>요율은 PG 고유 속성</b>이라 게이트웨이가 단일 출처다(MPG 비용기반).
+     *
+     * <p>두 곳이 이 값을 쓴다: ① 라우터의 <b>비용기반 라우팅</b>(가장 싼 PG 선택) ② 정산이 수수료를
+     * 계산할 때(settlement → payment 정방향으로 {@code PaymentGatewayRouter.feeRateOf}를 통해 읽음).
+     * 요율 정의를 한 곳에 둬 정산 수수료와 라우팅 비용이 어긋나지 않게 한다.
+     */
+    double feeRate();
+
+    /**
      * PG에 결제 승인을 요청한다.
      * 승인 실패는 예외가 아니라 {@link PaymentApproval} 결과로 표현한다(승인 여부는 정상 분기).
      */

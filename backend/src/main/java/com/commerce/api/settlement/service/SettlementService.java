@@ -3,6 +3,7 @@ package com.commerce.api.settlement.service;
 import com.commerce.api.global.common.PageResponse;
 import com.commerce.api.global.exception.BusinessException;
 import com.commerce.api.payment.dto.PaymentResponse;
+import com.commerce.api.payment.gateway.PaymentGatewayRouter;
 import com.commerce.api.payment.service.PaymentService;
 import com.commerce.api.settlement.dto.SettlementResponse;
 import com.commerce.api.settlement.dto.SettlementRunResponse;
@@ -33,6 +34,7 @@ public class SettlementService {
 
     private final SettlementRepository settlementRepository;
     private final PaymentService paymentService;
+    private final PaymentGatewayRouter paymentGatewayRouter;   // 수수료율 단일 출처(PG) 조회 — settlement → payment 정방향
 
     /**
      * 정산 배치 — PAID 결제 중 아직 정산 항목이 없는 건을 모아 SettlementEntry(SCHEDULED)를 만든다.
@@ -66,8 +68,8 @@ public class SettlementService {
                 continue;   // 이미 정산된 결제 → 건너뜀(멱등)
             }
             String provider = payment.provider();
-            double feeRate = SettlementPolicy.rateFor(provider);
-            long fee = SettlementPolicy.calculateFee(provider, payment.amount());
+            double feeRate = paymentGatewayRouter.feeRateOf(provider);   // 요율 단일 출처(PG)에서 조회
+            long fee = SettlementPolicy.calculateFee(feeRate, payment.amount());
             SettlementEntry entry = SettlementEntry.scheduled(
                     payment.id(),
                     payment.orderId(),

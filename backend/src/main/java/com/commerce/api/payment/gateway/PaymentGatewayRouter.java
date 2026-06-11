@@ -4,6 +4,7 @@ import com.commerce.api.global.exception.BusinessException;
 import com.commerce.api.payment.gateway.PaymentGateway.PaymentApprovalCommand;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,14 +22,20 @@ import org.springframework.stereotype.Component;
  * <p>스프링이 모든 {@code PaymentGateway} 빈을 주입 → {@link PaymentGateway#provider()}로 맵핑한다.
  * {@code InProcessEventPublisher}가 핸들러를 {@code eventType}별로 모으는 것과 같은 패턴(포트-어댑터 + 레지스트리).
  *
- * <p>지금은 클라이언트가 고른 provider를 그대로 위임하지만, 이 라우터가 <b>라우팅 전략의 자리</b>다 —
- * 추후 "기본 PG 장애 시 다른 PG로 페일오버", "비용 기반 선택" 같은 정책을 여기에 넣으면 결제 서비스 코드는
- * 바뀌지 않는다(전략을 한 곳에 가둠).
+ * <p>이 라우터가 <b>라우팅 전략의 자리</b>다 — 결제 서비스 코드를 안 건드리고 정책을 여기 모은다:
+ * ① 클라이언트 선택(provider) ② <b>페일오버</b>(장애·거절 시 다른 PG로, MPG-stretch)
+ * ③ <b>비용기반</b>({@link #AUTO}면 최저 요율 PG, 페일오버도 비용 오름차순).
  */
 @Component
 public class PaymentGatewayRouter {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentGatewayRouter.class);
+
+    /** 클라이언트가 PG를 직접 안 고르고 "가장 싼 PG로 알아서" 할 때 쓰는 값(비용기반 라우팅). */
+    public static final String AUTO = "AUTO";
+
+    /** 요율을 모르는 PG의 폴백 요율 — 보수적으로 가장 높게(3.0%). (게이트웨이가 없는 provider 방어) */
+    public static final double DEFAULT_FEE_RATE = 0.030;
 
     private final Map<String, PaymentGateway> byProvider;
     private final String defaultProvider;
@@ -58,6 +65,27 @@ public class PaymentGatewayRouter {
     }
 
     /**
+     * 해당 PG의 수수료율. 요율은 PG 고유 속성이라 게이트웨이가 단일 출처(MPG 비용기반).
+     * 정산(settlement)이 수수료를 계산할 때 이 메서드로 읽는다(settlement → payment 정방향).
+     * provider가 null/blank거나 등록되지 않은 PG면 {@link #DEFAULT_FEE_RATE}.
+     */
+    public double feeRateOf(String provider) {
+        if (provider == null || provider.isBlank()) {
+            return DEFAULT_FEE_RATE;
+        }
+        PaymentGateway gateway = byProvider.get(provider.toUpperCase());
+        return gateway != null ? gateway.feeRate() : DEFAULT_FEE_RATE;
+    }
+
+    /** 비용기반 라우팅 — 등록된 PG 중 수수료율이 가장 낮은 PG(동률이면 알파벳순). */
+    private String cheapestProvider() {
+        return byProvider.keySet().stream()
+                .min(Comparator.comparingDouble((String p) -> byProvider.get(p).feeRate())
+                        .thenComparing(Comparator.naturalOrder()))
+                .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "등록된 결제 PG가 없습니다."));
+    }
+
+    /**
      * 모든 PG의 정산 리포트를 합쳐 돌려준다 — 대사(reconciliation)가 여러 PG를 한 번에 대조한다.
      * 거래 ID 프리픽스가 PG를 구분하므로 키가 겹치지 않는다.
      */
@@ -78,10 +106,16 @@ public class PaymentGatewayRouter {
      * <p>단순화: 실무는 <b>기술적 실패(타임아웃·5xx)에만 페일오버</b>하고 한도초과 같은 <b>비즈니스 거절은
      * 재시도하지 않는다</b>(다른 PG도 거절). 모의 단계라 승인 실패면 일단 다음 PG로 넘긴다.
      *
-     * @param requestedProvider 클라이언트가 고른 PG(null/blank면 기본 PG). 미지원 PG면 {@link #resolve}가 400.
+     * <p><b>비용기반:</b> {@code requestedProvider}가 {@link #AUTO}면 가장 싼 PG를 1차로 고른다. 페일오버
+     * 순서도 비용 오름차순(싼 PG부터)이라, AUTO든 명시든 더 싼 대체 PG로 먼저 넘어간다.
+     *
+     * @param requestedProvider 클라이언트가 고른 PG. null/blank면 기본 PG, {@link #AUTO}면 최저가 PG. 미지원 PG면 400.
      */
     public PaymentRoutingResult approveWithFailover(String requestedProvider, PaymentApprovalCommand command) {
-        String primary = resolve(requestedProvider).provider().toUpperCase();   // 검증(미지원 400) + 정규화
+        // AUTO면 최저가 PG, 아니면 요청 PG(미지원이면 resolve가 400) — 둘 다 대문자 정규화
+        String primary = AUTO.equalsIgnoreCase(requestedProvider)
+                ? cheapestProvider()
+                : resolve(requestedProvider).provider().toUpperCase();
         List<String> attempted = new ArrayList<>();
         String lastReason = "사용 가능한 PG 없음";
 
@@ -108,11 +142,15 @@ public class PaymentGatewayRouter {
                 PaymentApproval.failed("모든 PG 결제 실패: " + lastReason), List.copyOf(attempted));
     }
 
-    /** 페일오버 시도 순서 — 요청 PG 먼저, 그다음 나머지 PG를 알파벳순(결정적). */
+    /** 페일오버 시도 순서 — 요청(또는 최저가) PG 먼저, 그다음 나머지를 <b>비용 오름차순</b>(동률이면 알파벳순). */
     private List<String> failoverOrder(String primary) {
         List<String> order = new ArrayList<>();
         order.add(primary);
-        byProvider.keySet().stream().filter(p -> !p.equals(primary)).sorted().forEach(order::add);
+        byProvider.keySet().stream()
+                .filter(p -> !p.equals(primary))
+                .sorted(Comparator.comparingDouble((String p) -> byProvider.get(p).feeRate())
+                        .thenComparing(Comparator.naturalOrder()))
+                .forEach(order::add);
         return order;
     }
 

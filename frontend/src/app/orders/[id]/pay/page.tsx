@@ -14,6 +14,9 @@ const METHODS = [
   { value: "MOCK_BANK", label: "계좌이체 (모의)" },
 ];
 
+// 결제 PG 선택지 — "자동"은 서버가 가장 싼 PG로 라우팅(비용기반). 나머지는 명시 선택.
+const PG_OPTIONS = [{ value: "AUTO", label: "자동 (최저 수수료)" }, ...PROVIDERS];
+
 /**
  * 결제 화면 (/orders/[id]/pay). PENDING 주문만 결제 가능.
  * 흐름: 주문 조회 → (PENDING 아니면 상세로 되돌림) → 결제수단 선택 → POST /api/payments → 상세(PAID).
@@ -105,8 +108,8 @@ export default function PaymentPage() {
       {/* 결제 PG (다중 PG) — 고른 PG로 승인하고, 장애 시 서버가 다른 PG로 자동 페일오버 */}
       <fieldset className="mt-6">
         <legend className="mb-2 text-sm font-medium text-gray-600">결제 PG</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {PROVIDERS.map((pg) => (
+        <div className="grid grid-cols-3 gap-2">
+          {PG_OPTIONS.map((pg) => (
             <label
               key={pg.value}
               className={`flex cursor-pointer items-center justify-center gap-2 rounded border p-3 text-sm transition ${
