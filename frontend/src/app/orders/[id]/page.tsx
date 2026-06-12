@@ -100,6 +100,24 @@ export default function OrderDetailPage() {
         <span className="text-2xl font-bold text-ink">{order.totalPrice.toLocaleString()}원</span>
       </div>
 
+      {/* 배송지 (주문 시점 스냅샷). 배송지 없이 만든 주문이면 표시 안 함. */}
+      {order.shipping && (
+        <section className="mt-6 rounded-2xl border border-line bg-paper p-5">
+          <h2 className="mb-2 font-serif text-lg text-ink">배송지</h2>
+          <p className="font-medium text-ink">
+            {order.shipping.recipient}
+            <span className="ml-2 text-sm font-normal text-muted">{order.shipping.phone}</span>
+          </p>
+          <p className="mt-1 text-sm text-ink/80">
+            [{order.shipping.zipcode}] {order.shipping.address1}
+            {order.shipping.address2 ? ` ${order.shipping.address2}` : ""}
+          </p>
+          {order.shipping.deliveryMemo && (
+            <p className="mt-1 text-sm text-muted">요청사항: {order.shipping.deliveryMemo}</p>
+          )}
+        </section>
+      )}
+
       {error && <p className="mt-4 text-sm text-danger">{error}</p>}
 
       <div className="mt-7 flex gap-3">

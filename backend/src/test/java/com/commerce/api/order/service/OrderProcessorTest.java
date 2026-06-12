@@ -7,9 +7,12 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.commerce.api.address.dto.AddressResponse;
+import com.commerce.api.address.service.AddressService;
 import com.commerce.api.cart.entity.Cart;
 import com.commerce.api.cart.repository.CartRepository;
 import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.order.dto.CheckoutRequest;
 import com.commerce.api.order.dto.OrderCreateRequest;
 import com.commerce.api.order.dto.OrderCreateRequest.OrderItemRequest;
 import com.commerce.api.order.dto.OrderResponse;
@@ -44,6 +47,8 @@ class OrderProcessorTest {
     private ProductRepository productRepository;
     @Mock
     private CartRepository cartRepository;
+    @Mock
+    private AddressService addressService;
 
     @InjectMocks
     private OrderProcessor orderProcessor;
@@ -102,7 +107,7 @@ class OrderProcessorTest {
     }
 
     @Test
-    @DisplayName("체크아웃 - 장바구니를 PENDING 주문으로 만들고 장바구니를 비운다 (재고 미차감)")
+    @DisplayName("체크아웃 - 장바구니를 PENDING 주문으로 만들고 배송지 스냅샷 + 장바구니 비우기 (재고 미차감)")
     void checkout_createsOrderAndClearsCart() {
         Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, 10);
         Cart cart = Cart.create(100L);
@@ -110,23 +115,31 @@ class OrderProcessorTest {
         given(cartRepository.findByMemberId(100L)).willReturn(Optional.of(cart));
         given(productRepository.findByOptionId(10L)).willReturn(Optional.of(product));
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
+        // 주소록(addressId=5)에서 배송지를 가져와 스냅샷
+        given(addressService.getOwnedAddress(100L, 5L)).willReturn(
+                new AddressResponse(5L, "홍길동", "010-1234-5678", "06236", "서울 강남구", "4층", true, null));
 
-        OrderResponse response = orderProcessor.checkout(100L);
+        OrderResponse response = orderProcessor.checkout(100L, new CheckoutRequest(5L, "문 앞에 놔주세요"));
 
         assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(response.totalPrice()).isEqualTo(20000L);              // 10000 x 2
         assertThat(response.items()).hasSize(1);
         assertThat(product.getOptions().get(0).getStock()).isEqualTo(10); // 재고 미차감(결제 시 차감)
         assertThat(cart.getCartItems()).isEmpty();                        // 장바구니 비워짐
+        // 배송지 스냅샷이 응답에 반영됨
+        assertThat(response.shipping()).isNotNull();
+        assertThat(response.shipping().recipient()).isEqualTo("홍길동");
+        assertThat(response.shipping().address1()).isEqualTo("서울 강남구");
+        assertThat(response.shipping().deliveryMemo()).isEqualTo("문 앞에 놔주세요");
     }
 
     @Test
-    @DisplayName("체크아웃 실패 - 빈 장바구니면 400, 저장 안 됨")
+    @DisplayName("체크아웃 실패 - 빈 장바구니면 400, 저장 안 됨 (주소 조회 전에 막힘)")
     void checkout_emptyCart() {
         Cart cart = Cart.create(100L);   // 항목 없음
         given(cartRepository.findByMemberId(100L)).willReturn(Optional.of(cart));
 
-        assertThatThrownBy(() -> orderProcessor.checkout(100L))
+        assertThatThrownBy(() -> orderProcessor.checkout(100L, new CheckoutRequest(5L, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("장바구니가 비어 있습니다");
         verify(orderRepository, never()).save(any(Order.class));

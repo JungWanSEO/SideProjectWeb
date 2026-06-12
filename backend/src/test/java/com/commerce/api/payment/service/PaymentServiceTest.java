@@ -56,7 +56,7 @@ class PaymentServiceTest {
     private PaymentService paymentService;
 
     private OrderResponse order(Long id, Long memberId, OrderStatus status, long total) {
-        return new OrderResponse(id, memberId, status, total, List.of(), LocalDateTime.now());
+        return new OrderResponse(id, memberId, status, total, List.of(), null, LocalDateTime.now());
     }
 
     private PaymentRequest request() {

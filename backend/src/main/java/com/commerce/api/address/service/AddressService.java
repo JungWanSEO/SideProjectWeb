@@ -26,6 +26,14 @@ public class AddressService {
 
     private final AddressRepository addressRepository;
 
+    /**
+     * 본인 소유 주소를 DTO로 조회 — 다른 도메인(주문 등)이 배송지 스냅샷을 만들 때 쓴다.
+     * 엔티티 대신 DTO를 돌려줘 도메인 경계를 지킨다(settlement→payment와 같은 방식). 없으면 404·남의 것 403.
+     */
+    public AddressResponse getOwnedAddress(Long memberId, Long addressId) {
+        return AddressResponse.from(findOwned(memberId, addressId));
+    }
+
     /** 내 주소 목록(기본배송지 먼저, 그다음 최신순). */
     public List<AddressResponse> getMyAddresses(Long memberId) {
         return addressRepository.findByMemberIdOrderByIsDefaultDescCreatedAtDesc(memberId).stream()

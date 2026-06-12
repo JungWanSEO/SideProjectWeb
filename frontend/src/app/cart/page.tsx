@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiGet, apiDelete, apiPost, apiPut } from "@/lib/api";
-import { Cart, CartItem, Order } from "@/lib/types";
+import { apiGet, apiDelete, apiPut } from "@/lib/api";
+import { Cart, CartItem } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import Badge from "@/components/ui/Badge";
 
@@ -19,7 +19,6 @@ export default function CartPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [ordering, setOrdering] = useState(false);
   const [updatingOptionId, setUpdatingOptionId] = useState<number | null>(null); // 수량 변경 중인 항목
 
   // 비로그인 → 로그인으로
@@ -57,20 +56,6 @@ export default function CartPage() {
       setError((e as Error).message);
     } finally {
       setUpdatingOptionId(null);
-    }
-  };
-
-  // 체크아웃: 서버가 장바구니 → 주문(PENDING) 변환 + 장바구니 비우기 (한 번의 호출).
-  // 주문은 아직 '결제 대기'일 뿐 → 곧장 결제 화면으로 보낸다(재고 차감은 결제 승인 시점).
-  const checkout = async () => {
-    setOrdering(true);
-    setError(null);
-    try {
-      const order = await apiPost<Order>("/api/orders/checkout");
-      router.push(`/orders/${order.id}/pay`); // 결제 화면으로 이동 (이 컴포넌트는 언마운트)
-    } catch (e) {
-      setError((e as Error).message); // 재고부족(409)·빈 장바구니(400) 등
-      setOrdering(false);
     }
   };
 
@@ -155,11 +140,10 @@ export default function CartPage() {
           {error && <p className="mt-4 text-sm text-danger">{error}</p>}
 
           <button
-            onClick={checkout}
-            disabled={ordering}
-            className="mt-6 w-full rounded-full bg-clay px-4 py-3.5 font-medium text-cream transition hover:bg-clay-600 disabled:opacity-50"
+            onClick={() => router.push("/checkout")}
+            className="mt-6 w-full rounded-full bg-clay px-4 py-3.5 font-medium text-cream transition hover:bg-clay-600"
           >
-            {ordering ? "주문 처리 중…" : "주문하기"}
+            주문하기
           </button>
         </>
       )}

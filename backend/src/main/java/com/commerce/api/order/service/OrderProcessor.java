@@ -1,13 +1,17 @@
 package com.commerce.api.order.service;
 
+import com.commerce.api.address.dto.AddressResponse;
+import com.commerce.api.address.service.AddressService;
 import com.commerce.api.cart.entity.Cart;
 import com.commerce.api.cart.repository.CartRepository;
 import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.order.dto.CheckoutRequest;
 import com.commerce.api.order.dto.OrderCreateRequest;
 import com.commerce.api.order.dto.OrderCreateRequest.OrderItemRequest;
 import com.commerce.api.order.dto.OrderResponse;
 import com.commerce.api.order.entity.Order;
 import com.commerce.api.order.entity.OrderItem;
+import com.commerce.api.order.entity.ShippingInfo;
 import com.commerce.api.order.repository.OrderRepository;
 import com.commerce.api.product.entity.Product;
 import com.commerce.api.product.repository.ProductRepository;
@@ -31,20 +35,21 @@ public class OrderProcessor {
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final CartRepository cartRepository;
+    private final AddressService addressService;   // 배송지 스냅샷(주소록에서) — 도메인 경계는 서비스+DTO로
 
-    /** 명시적 항목 목록으로 주문 생성 (POST /api/orders). */
+    /** 명시적 항목 목록으로 주문 생성 (POST /api/orders). 배송지는 없다(null). */
     @Transactional
     public OrderResponse place(Long memberId, OrderCreateRequest request) {
-        return placeOrder(memberId, request.items());
+        return placeOrder(memberId, request.items(), null);
     }
 
     /**
      * 체크아웃: 서버의 장바구니를 읽어 그대로 주문 생성 + 장바구니 비우기 (한 트랜잭션).
      * 클라이언트는 항목을 보내지 않는다 — <b>서버 장바구니가 진실의 원천</b>(위변조 방지).
-     * 주문 생성·재고 차감·장바구니 비우기가 원자적 → 부분 실패(주문됐는데 장바구니 잔존) 없음.
+     * 배송지는 주소록(addressId)에서 골라 주문에 <b>스냅샷</b>한다. 주문 생성·장바구니 비우기가 원자적.
      */
     @Transactional
-    public OrderResponse checkout(Long memberId) {
+    public OrderResponse checkout(Long memberId, CheckoutRequest request) {
         Cart cart = cartRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST, "장바구니가 비어 있습니다."));
 
@@ -55,17 +60,26 @@ public class OrderProcessor {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "장바구니가 비어 있습니다.");
         }
 
-        OrderResponse response = placeOrder(memberId, items);
+        // 본인 주소를 조회(없음 404·남의 것 403)해 배송지 스냅샷을 만든다.
+        AddressResponse addr = addressService.getOwnedAddress(memberId, request.addressId());
+        ShippingInfo shipping = ShippingInfo.of(addr.recipient(), addr.phone(), addr.zipcode(),
+                addr.address1(), addr.address2(), request.deliveryMemo());
+
+        OrderResponse response = placeOrder(memberId, items, shipping);
         cart.clearItems();   // 주문 성공 후 장바구니 비우기 (orphanRemoval로 DB 삭제, 같은 트랜잭션)
         return response;
     }
 
     /**
      * 항목마다 상품(옵션)을 조회해 주문 시점 스냅샷(상품명·사이즈·가격)을 남기고 주문에 추가한다.
+     * 배송지(shipping)가 있으면 함께 스냅샷한다(체크아웃 경로). 명시적 주문 생성 경로는 null.
      * 주문은 PENDING(결제 대기)으로 생성되며, <b>재고는 차감하지 않는다</b> — 재고 차감은 결제 승인(pay) 시점.
      */
-    private OrderResponse placeOrder(Long memberId, List<OrderItemRequest> items) {
+    private OrderResponse placeOrder(Long memberId, List<OrderItemRequest> items, ShippingInfo shipping) {
         Order order = Order.create(memberId);
+        if (shipping != null) {
+            order.ship(shipping);
+        }
 
         for (OrderItemRequest itemRequest : items) {
             // 루트 경유: 옵션 ID로 Product 애그리거트를 로드(이름·가격 스냅샷에 어차피 필요)

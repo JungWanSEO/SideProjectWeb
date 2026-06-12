@@ -129,6 +129,16 @@ export interface OrderItem {
   subtotal: number;
 }
 
+/** 주문 배송지 스냅샷 (OrderResponse.shipping) — 주문 시점에 주소록에서 복사. 없으면 null. */
+export interface ShippingInfo {
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  address1: string;
+  address2: string | null;
+  deliveryMemo: string | null;
+}
+
 /** 주문 상세 (OrderResponse) */
 export interface Order {
   id: number;
@@ -136,6 +146,7 @@ export interface Order {
   status: OrderStatus;
   totalPrice: number;
   items: OrderItem[];
+  shipping: ShippingInfo | null;
   createdAt: string;
 }
 

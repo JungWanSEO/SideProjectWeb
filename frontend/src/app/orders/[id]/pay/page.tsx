@@ -108,6 +108,20 @@ export default function PaymentPage() {
         <span className="text-2xl font-bold text-ink">{order.totalPrice.toLocaleString()}원</span>
       </div>
 
+      {/* 배송지 요약 (주문 시 스냅샷) */}
+      {order.shipping && (
+        <div className="mt-4 rounded-xl border border-line bg-paper px-4 py-3 text-sm">
+          <p className="text-ink/80">
+            <span className="text-muted">배송지 · </span>
+            {order.shipping.recipient} ({order.shipping.phone})
+          </p>
+          <p className="mt-0.5 text-ink/70">
+            [{order.shipping.zipcode}] {order.shipping.address1}
+            {order.shipping.address2 ? ` ${order.shipping.address2}` : ""}
+          </p>
+        </div>
+      )}
+
       {/* 결제 PG (다중 PG) — 고른 PG로 승인하고, 장애 시 서버가 다른 PG로 자동 페일오버 */}
       <fieldset className="mt-7">
         <legend className="mb-2 text-sm font-medium text-muted">결제 PG</legend>
