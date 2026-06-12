@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiGet, apiDelete, apiPost } from "@/lib/api";
-import { Cart, Order } from "@/lib/types";
+import { apiGet, apiDelete, apiPost, apiPut } from "@/lib/api";
+import { Cart, CartItem, Order } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import Badge from "@/components/ui/Badge";
 
@@ -20,6 +20,7 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ordering, setOrdering] = useState(false);
+  const [updatingOptionId, setUpdatingOptionId] = useState<number | null>(null); // 수량 변경 중인 항목
 
   // 비로그인 → 로그인으로
   useEffect(() => {
@@ -40,6 +41,22 @@ export default function CartPage() {
       setCart(updated); // 삭제 API가 갱신된 장바구니를 돌려줌
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  // 수량 변경(절대값): PUT이 갱신된 장바구니를 돌려줌(소계·총합 재계산까지 서버가 함).
+  // 최소 1(0은 삭제 버튼으로), 재고 초과는 클램프(백엔드는 막지 않지만 UX 가드).
+  const changeQty = async (it: CartItem, next: number) => {
+    if (next < 1 || next > it.stock || next === it.quantity) return;
+    setUpdatingOptionId(it.optionId);
+    setError(null);
+    try {
+      const updated = await apiPut<Cart>(`/api/carts/items/${it.optionId}`, { quantity: next });
+      setCart(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUpdatingOptionId(null);
     }
   };
 
@@ -85,7 +102,7 @@ export default function CartPage() {
                 <div>
                   <p className="font-serif text-lg text-ink">{it.productName}</p>
                   <p className="mt-0.5 text-sm text-muted">
-                    사이즈 {it.size} · {it.quantity}개
+                    사이즈 {it.size}
                     {it.soldOut && (
                       <span className="ml-2">
                         <Badge tone="danger">품절</Badge>
@@ -94,7 +111,31 @@ export default function CartPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="font-medium text-ink">{it.subtotal.toLocaleString()}원</span>
+                  {/* 수량 스테퍼: −는 1에서 멈추고(0은 '삭제'), +는 재고에서 멈춘다. 변경 중엔 비활성 */}
+                  <div className="flex items-center rounded-full border border-line">
+                    <button
+                      onClick={() => changeQty(it, it.quantity - 1)}
+                      disabled={updatingOptionId === it.optionId || it.quantity <= 1}
+                      aria-label="수량 줄이기"
+                      className="px-3 py-1.5 text-muted transition hover:text-ink disabled:opacity-40"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[2rem] text-center text-sm font-medium text-ink">
+                      {it.quantity}
+                    </span>
+                    <button
+                      onClick={() => changeQty(it, it.quantity + 1)}
+                      disabled={updatingOptionId === it.optionId || it.soldOut || it.quantity >= it.stock}
+                      aria-label="수량 늘리기"
+                      className="px-3 py-1.5 text-muted transition hover:text-ink disabled:opacity-40"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="w-24 text-right font-medium text-ink">
+                    {it.subtotal.toLocaleString()}원
+                  </span>
                   <button
                     onClick={() => remove(it.optionId)}
                     className="text-sm text-muted transition hover:text-danger"

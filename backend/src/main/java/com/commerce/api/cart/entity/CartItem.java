@@ -1,6 +1,7 @@
 package com.commerce.api.cart.entity;
 
 import com.commerce.api.global.common.BaseEntity;
+import com.commerce.api.global.exception.BusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -14,6 +15,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.http.HttpStatus;
 
 /**
  * 장바구니 항목 (Cart 애그리거트 내부).
@@ -58,5 +60,16 @@ public class CartItem extends BaseEntity {
 
     public void addQuantity(int quantity) {
         this.quantity += quantity;
+    }
+
+    /**
+     * 수량을 절대값으로 설정한다(수량 스테퍼/입력용). 가산하는 addQuantity와 달리 덮어쓴다.
+     * 도메인 불변식(1 이상)을 엔티티에서도 방어한다 — DTO @Positive와 이중 방어(.NET의 가드 절과 동일).
+     */
+    public void changeQuantity(int quantity) {
+        if (quantity < 1) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "수량은 1 이상이어야 합니다.");
+        }
+        this.quantity = quantity;
     }
 }

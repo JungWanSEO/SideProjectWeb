@@ -1,6 +1,7 @@
 package com.commerce.api.cart.controller;
 
 import com.commerce.api.cart.dto.CartItemAddRequest;
+import com.commerce.api.cart.dto.CartItemUpdateRequest;
 import com.commerce.api.cart.dto.CartResponse;
 import com.commerce.api.cart.service.CartService;
 import com.commerce.api.global.common.ApiResponse;
@@ -14,14 +15,16 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 장바구니 API. 대상 회원은 인증된 로그인 사용자.
- * - POST   /api/carts/items                 담기 (옵션 단위)
+ * - POST   /api/carts/items                 담기 (옵션 단위, 같은 옵션이면 수량 가산)
  * - GET    /api/carts                        조회
+ * - PUT    /api/carts/items/{optionId}      수량 변경 (옵션 단위, 절대값으로 설정)
  * - DELETE /api/carts/items/{optionId}      항목 제거 (옵션 단위)
  */
 @Tag(name = "장바구니(Cart)", description = "담기 / 조회 / 항목 제거 API")
@@ -44,6 +47,17 @@ public class CartController {
     @GetMapping
     public ResponseEntity<ApiResponse<CartResponse>> getCart() {
         return ResponseEntity.ok(ApiResponse.success(cartService.getCart(SecurityUtil.getCurrentMemberId())));
+    }
+
+    @Operation(summary = "장바구니 항목 수량 변경",
+            description = "특정 옵션(사이즈) 항목의 수량을 절대값으로 변경한다(담기와 달리 더하지 않고 덮어쓴다). 항목이 없으면 404.")
+    @PutMapping("/items/{optionId}")
+    public ResponseEntity<ApiResponse<CartResponse>> updateItemQuantity(
+            @PathVariable Long optionId,
+            @Valid @RequestBody CartItemUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "수량을 변경했습니다.",
+                cartService.changeQuantity(SecurityUtil.getCurrentMemberId(), optionId, request)));
     }
 
     @Operation(summary = "장바구니 항목 제거", description = "장바구니에서 특정 옵션(사이즈) 항목을 제거한다.")

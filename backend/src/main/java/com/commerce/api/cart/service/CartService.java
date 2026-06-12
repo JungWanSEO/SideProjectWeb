@@ -1,6 +1,7 @@
 package com.commerce.api.cart.service;
 
 import com.commerce.api.cart.dto.CartItemAddRequest;
+import com.commerce.api.cart.dto.CartItemUpdateRequest;
 import com.commerce.api.cart.dto.CartResponse;
 import com.commerce.api.cart.dto.CartResponse.CartItemResponse;
 import com.commerce.api.cart.entity.Cart;
@@ -55,6 +56,19 @@ public class CartService {
         return cartRepository.findByMemberId(memberId)
                 .map(this::toResponse)
                 .orElseGet(() -> new CartResponse(memberId, List.of(), 0));
+    }
+
+    /**
+     * 항목 수량 변경 (옵션 단위, 절대값). 담기(가산)와 달리 덮어쓴다.
+     * 재고는 여기서 막지 않는다(담기와 동일한 라이브 성격) — 부족 검증은 주문/결제 시점.
+     * cart는 이미 영속 상태라 dirty checking으로 flush된다(save 불필요 — removeItem과 동일).
+     */
+    @Transactional
+    public CartResponse changeQuantity(Long memberId, Long optionId, CartItemUpdateRequest request) {
+        Cart cart = cartRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "장바구니가 없습니다."));
+        cart.updateItemQuantity(optionId, request.quantity());
+        return toResponse(cart);
     }
 
     /** 항목 제거 (옵션 단위) */

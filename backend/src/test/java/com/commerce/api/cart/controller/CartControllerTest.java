@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -99,6 +100,38 @@ class CartControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].productName").value("반팔티셔츠"))
                 .andExpect(jsonPath("$.data.items[0].size").value("M"));
+    }
+
+    @Test
+    @DisplayName("PUT /api/carts/items/{optionId} - 수량 변경 성공 시 200")
+    void updateItemQuantity_success() throws Exception {
+        // 수량을 5로 변경한 장바구니 응답을 stub
+        CartResponse updated = new CartResponse(1L,
+                List.of(new CartItemResponse(1L, 10L, "반팔티셔츠", "M", 10000L, 5, 50000L, 50, false)), 5);
+        given(cartService.changeQuantity(eq(1L), eq(10L), any())).willReturn(updated);
+
+        mockMvc.perform(put("/api/carts/items/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":5}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(5))
+                .andExpect(jsonPath("$.data.items[0].subtotal").value(50000))
+                .andExpect(jsonPath("$.data.totalQuantity").value(5));
+    }
+
+    @Test
+    @DisplayName("PUT /api/carts/items/{optionId} - 수량이 0 이하면 400")
+    void updateItemQuantity_validationFail() throws Exception {
+        mockMvc.perform(put("/api/carts/items/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     @Test
