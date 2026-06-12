@@ -23,6 +23,8 @@ public record ProductResponse(
         Long brandId,
         String brandName,
         List<ProductOptionResponse> options,   // 사이즈별 재고/품절
+        int ratingCount,        // 리뷰 수
+        double ratingAverage,   // 평점 평균(소수 1자리, 리뷰 없으면 0)
         LocalDateTime createdAt
 ) {
     public static ProductResponse of(Product product, String categoryName, String brandName) {
@@ -41,6 +43,8 @@ public record ProductResponse(
                 product.getBrandId(),
                 brandName,
                 options,
+                product.getRatingCount(),
+                product.getRatingAverage(),
                 product.getCreatedAt()
         );
     }

@@ -61,6 +61,16 @@ public class Product extends BaseEntity {
     private Long categoryId;   // 카테고리 참조(ID, nullable)
     private Long brandId;      // 브랜드 참조(ID, nullable)
 
+    /**
+     * 평점 비정규화 카운터(리뷰 도메인이 원자 UPDATE로 갱신). 평균 = ratingSum/ratingCount.
+     * 읽기(목록·상세)에서 매번 리뷰를 집계하지 않으려고 상품에 누적해 둔다. 작성/삭제 시점에만 증감.
+     */
+    @Column(nullable = false)
+    private int ratingCount = 0;
+
+    @Column(nullable = false)
+    private int ratingSum = 0;
+
     /** 사이즈 옵션들(애그리거트 내부). 재고·@Version은 각 옵션이 보유. */
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProductOption> options = new ArrayList<>();
@@ -75,6 +85,11 @@ public class Product extends BaseEntity {
         this.status = status;
         this.categoryId = categoryId;
         this.brandId = brandId;
+    }
+
+    /** 평점 평균(소수 1자리). 리뷰가 없으면 0. (비정규화 카운터에서 계산 — 별도 집계 쿼리 불필요) */
+    public double getRatingAverage() {
+        return ratingCount == 0 ? 0.0 : Math.round((double) ratingSum / ratingCount * 10) / 10.0;
     }
 
     /** 옵션 추가 + 양방향 연관 설정. */

@@ -3,6 +3,7 @@ package com.commerce.api.product.repository;
 import com.commerce.api.product.entity.Product;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,4 +21,23 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
      */
     @Query("select p from Product p join p.options o where o.id = :optionId")
     Optional<Product> findByOptionId(@Param("optionId") Long optionId);
+
+    /**
+     * 평점 카운터 증가(리뷰 작성 시). <b>원자 UPDATE</b> — 엔티티 더티체킹 대신 DB에서 직접 증감해
+     * 동시 작성 시 lost update를 막는다(Product에 @Version 없이도 안전). 평균은 읽을 때 sum/count로 계산.
+     *
+     * <p>flushAutomatically=true: 같은 트랜잭션에 보류된 엔티티 변경(리뷰 INSERT/DELETE)을 이 벌크 UPDATE
+     * <b>전에 flush</b>한다. (안 하면 뒤따르는 clearAutomatically가 flush 안 된 변경을 버린다 — 리뷰 삭제 누락 함정.)
+     * clearAutomatically=true: 벌크 UPDATE 후 컨텍스트를 비워, 이후 같은 tx에서 읽을 때 stale 엔티티를 막는다.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Product p set p.ratingCount = p.ratingCount + 1, p.ratingSum = p.ratingSum + :rating "
+            + "where p.id = :productId")
+    void incrementRating(@Param("productId") Long productId, @Param("rating") int rating);
+
+    /** 평점 카운터 감소(리뷰 삭제 시). count가 0 아래로 내려가지 않도록 가드. (flush/clear 이유는 increment 참고) */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Product p set p.ratingCount = p.ratingCount - 1, p.ratingSum = p.ratingSum - :rating "
+            + "where p.id = :productId and p.ratingCount > 0")
+    void decrementRating(@Param("productId") Long productId, @Param("rating") int rating);
 }
