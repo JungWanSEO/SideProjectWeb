@@ -118,6 +118,45 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("리뷰 수정 성공 - 본인 리뷰, 평점 5→3 → 내용 갱신 + 합계 델타(-2) 조정")
+    void update_success() {
+        Review review = reviewWithId(100L, MEMBER_ID, PRODUCT_ID, 5);
+        given(reviewRepository.findById(100L)).willReturn(Optional.of(review));
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(memberWithNickname("앨리스")));
+        ReviewCreateRequest request = new ReviewCreateRequest(3, "다시 보니 보통이에요", null);
+
+        ReviewResponse response = reviewService.update(100L, MEMBER_ID, request);
+
+        assertThat(response.rating()).isEqualTo(3);
+        assertThat(response.content()).isEqualTo("다시 보니 보통이에요");
+        verify(productRepository).adjustRatingSum(PRODUCT_ID, -2);   // 5 → 3
+    }
+
+    @Test
+    @DisplayName("리뷰 수정 - 평점이 그대로면 합계 조정은 호출하지 않는다")
+    void update_sameRating_noAdjust() {
+        Review review = reviewWithId(100L, MEMBER_ID, PRODUCT_ID, 4);
+        given(reviewRepository.findById(100L)).willReturn(Optional.of(review));
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(memberWithNickname("앨리스")));
+
+        reviewService.update(100L, MEMBER_ID, new ReviewCreateRequest(4, "내용만 수정", null));
+
+        verify(productRepository, never()).adjustRatingSum(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("리뷰 수정 실패 - 남의 리뷰는 403, 합계 조정 안 함")
+    void update_forbidden() {
+        Review review = reviewWithId(100L, 999L, PRODUCT_ID, 5);   // 작성자 999, 요청자 1
+        given(reviewRepository.findById(100L)).willReturn(Optional.of(review));
+
+        assertThatThrownBy(() -> reviewService.update(100L, MEMBER_ID, new ReviewCreateRequest(1, "악의수정", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("status").isEqualTo(HttpStatus.FORBIDDEN);
+        verify(productRepository, never()).adjustRatingSum(any(), anyInt());
+    }
+
+    @Test
     @DisplayName("리뷰 삭제 성공 - 본인 리뷰 → 삭제 + 평점 카운터 감소")
     void delete_success() {
         Review review = reviewWithId(100L, MEMBER_ID, PRODUCT_ID, 5);

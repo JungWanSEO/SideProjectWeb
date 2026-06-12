@@ -40,4 +40,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
     @Query("update Product p set p.ratingCount = p.ratingCount - 1, p.ratingSum = p.ratingSum - :rating "
             + "where p.id = :productId and p.ratingCount > 0")
     void decrementRating(@Param("productId") Long productId, @Param("rating") int rating);
+
+    /** 평점 합계만 델타 조정(리뷰 수정 시 평점이 바뀐 경우). count는 그대로. (flush/clear 이유는 increment 참고) */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Product p set p.ratingSum = p.ratingSum + :delta where p.id = :productId")
+    void adjustRatingSum(@Param("productId") Long productId, @Param("delta") int delta);
 }

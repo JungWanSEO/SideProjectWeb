@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -99,6 +100,22 @@ class ReviewControllerTest {
                 .andExpect(jsonPath("$.data.content[0].rating").value(5))
                 .andExpect(jsonPath("$.data.content[0].writerName").value("앨리스"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    @DisplayName("PUT /api/reviews/{id} - 수정 성공 시 200 (현재 회원으로 위임)")
+    void update_success() throws Exception {
+        given(reviewService.update(eq(100L), eq(1L), any())).willReturn(
+                new ReviewResponse(100L, 1L, "앨리스", 7L, 4, "수정된 내용", null, LocalDateTime.now()));
+
+        mockMvc.perform(put("/api/reviews/100")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rating":4,"content":"수정된 내용"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rating").value(4))
+                .andExpect(jsonPath("$.data.content").value("수정된 내용"));
     }
 
     @Test

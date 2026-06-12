@@ -6,6 +6,7 @@ import { apiGet } from "@/lib/api";
 import { PageResponse, Product } from "@/lib/types";
 import ProductThumb from "@/components/ui/ProductThumb";
 import Badge from "@/components/ui/Badge";
+import Stars from "@/components/ui/Stars";
 import { productImageSrc } from "@/lib/productImage";
 
 /**
@@ -60,6 +61,16 @@ export default function ProductsPage() {
                   )}
                   <h2 className="mt-1 font-serif text-lg text-ink">{p.name}</h2>
                   <p className="mt-1 font-medium text-ink">{p.price.toLocaleString()}원</p>
+
+                  {/* 평점 — 리뷰가 있을 때만 */}
+                  {p.ratingCount > 0 && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <Stars value={p.ratingAverage} className="text-xs" />
+                      <span className="text-xs text-muted">
+                        {p.ratingAverage.toFixed(1)} ({p.ratingCount})
+                      </span>
+                    </div>
+                  )}
 
                   {/* 사이즈 옵션 — 품절 사이즈는 흐리게 취소선 */}
                   <div className="mt-2 flex flex-wrap gap-1">

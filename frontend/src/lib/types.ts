@@ -41,6 +41,20 @@ export interface Product {
   brandId: number | null;
   brandName: string | null;
   options: ProductOption[];
+  ratingCount: number; // 리뷰 수
+  ratingAverage: number; // 평점 평균(소수 1자리, 리뷰 없으면 0)
+  createdAt: string;
+}
+
+/** 리뷰 (ReviewResponse) */
+export interface Review {
+  id: number;
+  memberId: number;
+  writerName: string | null; // 작성자 닉네임(없으면 null)
+  productId: number;
+  rating: number; // 1~5
+  content: string;
+  imageUrl: string | null; // 사진리뷰(없으면 null)
   createdAt: string;
 }
 

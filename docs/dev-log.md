@@ -87,7 +87,7 @@
 - **다중 PG MPG-stretch — 라우터 페일오버** — 요청 PG가 장애(설정상 down)·승인 거절이면 **다른 PG로 자동 대체**해 결제 성공률 방어. `PaymentGatewayRouter.approveWithFailover()`가 요청 PG 먼저→실패 시 나머지 PG(알파벳순) 순차 시도, **실제 승인한 PG**를 `PaymentRoutingResult`로 반환해 Payment에 기록(환불도 그 PG로). `payment.unavailable-providers`(설정/env)로 점검 PG 지정. `PaymentService.pay`는 한 줄 교체(전략은 라우터에 가둠), Flyway 불필요 (149 tests). **MySQL 런타임 검증 PASS**(KAKAOPAY down → 요청 KAKAOPAY가 TOSS로 페일오버 승인·Payment.provider=TOSS, 미지원 PG 400, WARN 로그 관측). **오답노트 스킬 신설**(`.claude/skills/mistake-log/` — 운영 함정 기록·참고).
 
 **11일차 (06-12)**
-- **Phase 1 #2 리뷰·평점 도메인 (백엔드)** — 새 도메인 `review/`(Review: memberId·productId ID참조·rating 1~5·content·사진 imageUrl·1인1상품1리뷰 UNIQUE). 작성/목록/삭제 API(GET 공개·POST/DELETE 인증). 결정: **구매자만**(PAID 주문 보유 검증)·**평점 비정규화 카운터**(Product.ratingCount/Sum, 원자 `@Modifying` 증감)·핵심+사진리뷰. Product에 평점 노출(ProductResponse), Flyway **V15**. 테스트 +10→**162**. **정적+MySQL 런타임 PASS**(미구매403/구매201/집계count1·avg5.0/중복409/삭제후0). 🐞**런타임서 버그 발견·수정**: `@Modifying(clearAutomatically)`가 flush 전 컨텍스트 비워 보류 삭제 유실 → `flushAutomatically=true` 추가(오답노트). **미커밋**.
+- **Phase 1 #2 리뷰·평점 도메인 (백엔드+FE+수정)** — 새 도메인 `review/`(Review: memberId·productId ID참조·rating 1~5·content·사진 imageUrl·1인1상품1리뷰 UNIQUE). 작성/목록/**수정**/삭제 API. 결정: **구매자만**(PAID 주문 보유 검증)·**평점 비정규화 카운터**(Product.ratingCount/Sum, 원자 `@Modifying` 증감/델타)·핵심+사진리뷰·**수정은 작성자만**(삭제는 ADMIN도). Flyway **V15**, ProductResponse 평점 노출. **FE**: Stars(표시/입력)·목록 카드 별점·상세 평점요약+리뷰목록+작성/인라인수정 폼(로그인·구매자 게이팅). 테스트 +14→**166**. **정적+MySQL 런타임 PASS**(미구매403/구매201/집계/중복409/삭제후0/수정 시 avg 갱신·작성자아님 403). 🐞**런타임서 버그 발견·수정**: `@Modifying(clearAutomatically)`가 flush 전 컨텍스트 비워 보류 삭제 유실 → `flushAutomatically=true`(오답노트). 백엔드 **커밋 `94b6304`**, FE+수정은 **미커밋**.
 
 **10일차 (06-11)**
 - **Phase 1 #1 상품 이미지** — 제품 기획 Phase 1 착수. 백엔드 `Product.imageUrl`(대표 1장·갤러리는 후속) + Flyway **V14** + DTO/서비스/테스트 동기화, FE `ProductThumb`를 실제 `<img>`로(없으면 그라데이션 폴백) + **로컬 SVG 의류 일러스트 12종**(`public/products/`, imageUrl 없으면 상품명 키워드→id 순으로 결정적 매핑). 결정: 단일 대표 imageUrl·로컬 정적(실사진 불가→손수 SVG)·nullable+FE폴백(시드 불필요). **정적 검증 PASS**(테스트·tsc·lint) + **MySQL 런타임 검증 PASS**(Claude 직접: Flyway V14 적용·validate, imageUrl 유/무 HTTP 왕복, 캐노니컬 복원). ⚠️처음 "런타임 불가" 오판=셸 cwd 지속+Glob gitignore(오답노트 기록).
@@ -119,5 +119,5 @@
 
 - **다중 PG 완주(06-08~10, dev 병합·런타임 검증)**: MPG-1(라우터)→MPG-3(정산 PG별 수수료율)→MPG-2(대사 PG별 분류)→MPG-stretch(라우터 페일오버)→**FE 노출**(결제 PG 선택·어드민 정산/대사 PG·요율 컬럼·관리자 UX) ✅(149 tests).
 - **결제 심화 한 줄 완성**: 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→결제완료 이벤트(트랜잭셔널 아웃박스)→폴러 신뢰성(백오프·SKIP LOCKED)→다중 PG(라우터→PG별 수수료율→PG별 대사→페일오버→화면).
-- **제품 기획 Phase 1 진행(06-11~12)**: #1 상품 이미지(대표 imageUrl + 로컬 SVG placeholder) ✅정적+런타임 PASS·**커밋 `b830277`**. #2 리뷰·평점 도메인 **백엔드** ✅정적+런타임 PASS(미커밋) — 다음 = #2 **FE(별점·리뷰목록·작성폼)** → #3 패션 필터/검색 UI.
+- **제품 기획 Phase 1 진행(06-11~12)**: #1 상품 이미지(대표 imageUrl + 로컬 SVG placeholder) ✅·**커밋 `b830277`**. #2 리뷰·평점 도메인(백엔드 ✅·**커밋 `94b6304`** + FE 별점·리뷰목록·작성/수정 폼 ✅·**미커밋**) — 정적+런타임 PASS. 다음 = #3 **패션 필터/검색 UI**.
 - (다음 후보) 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 디자인 폴리시 / 대표 이미지 갤러리(ProductImage) / 옵션 추가·수정 API / 카테고리 계층화 / dev→main 승격(마일스톤).

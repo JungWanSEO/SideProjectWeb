@@ -92,6 +92,25 @@ public class ReviewService {
         productRepository.decrementRating(review.getProductId(), review.getRating());
     }
 
+    /**
+     * 리뷰 수정: 작성자 <b>본인만</b>(아니면 403). 평점이 바뀌면 상품 평점 합계를 델타만큼 조정(개수는 그대로).
+     * (삭제는 ADMIN도 가능하지만 내용 수정은 작성자만 — 남의 글을 고쳐 쓰지 않는다.)
+     */
+    @Transactional
+    public ReviewResponse update(Long reviewId, Long memberId, ReviewCreateRequest request) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."));
+        if (!review.getMemberId().equals(memberId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "본인 리뷰만 수정할 수 있습니다.");
+        }
+        int delta = request.rating() - review.getRating();
+        review.update(request.rating(), request.content(), request.imageUrl());   // 더티 체킹으로 UPDATE
+        if (delta != 0) {
+            productRepository.adjustRatingSum(review.getProductId(), delta);       // 평점 변화만 합계 반영
+        }
+        return ReviewResponse.of(review, writerName(memberId));
+    }
+
     // --- writerName enrich: memberId로 닉네임 채우기 (상품 enrich와 같은 발상) ---
 
     /** 단건: 회원 닉네임(없으면 null). */

@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -63,6 +64,18 @@ public class ReviewController {
             Pageable pageable) {
         PageResponse<ReviewResponse> response = reviewService.getReviews(productId, pageable);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @Operation(summary = "리뷰 수정",
+            description = "리뷰를 수정한다(평점·내용·사진). 작성자 본인만 가능(아니면 403). 없으면 404. "
+                    + "평점이 바뀌면 상품 평점 평균이 갱신된다.")
+    @PutMapping("/api/reviews/{reviewId}")
+    public ResponseEntity<ApiResponse<ReviewResponse>> update(
+            @PathVariable Long reviewId,
+            @Valid @RequestBody ReviewCreateRequest request) {
+        ReviewResponse response = reviewService.update(
+                reviewId, SecurityUtil.getCurrentMemberId(), request);
+        return ResponseEntity.ok(ApiResponse.success("리뷰가 수정되었습니다.", response));
     }
 
     @Operation(summary = "리뷰 삭제",

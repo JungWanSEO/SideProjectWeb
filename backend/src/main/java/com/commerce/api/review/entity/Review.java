@@ -55,4 +55,11 @@ public class Review extends BaseEntity {
         this.content = content;
         this.imageUrl = imageUrl;
     }
+
+    /** 작성자가 리뷰를 수정. 평점 변화량은 서비스가 상품 평점 합계에 반영한다(memberId/productId는 불변). */
+    public void update(int rating, String content, String imageUrl) {
+        this.rating = rating;
+        this.content = content;
+        this.imageUrl = imageUrl;
+    }
 }
