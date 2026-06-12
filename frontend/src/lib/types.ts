@@ -88,6 +88,18 @@ export interface Cart {
   totalQuantity: number;
 }
 
+/** 배송지(주소록) — AddressResponse. 회원당 기본배송지(isDefault) 1개. */
+export interface Address {
+  id: number;
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  address1: string;
+  address2: string | null;
+  isDefault: boolean;
+  createdAt: string;
+}
+
 // 결제 도입 후: 주문은 결제 대기(PENDING) → 결제 완료(PAID) / 취소(CANCELLED)
 export type OrderStatus = "PENDING" | "PAID" | "CANCELLED";
 

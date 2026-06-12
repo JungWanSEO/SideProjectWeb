@@ -29,6 +29,9 @@ export default function Header() {
               <Link href="/orders" className={navLink}>
                 주문내역
               </Link>
+              <Link href="/account/addresses" className={navLink}>
+                배송지
+              </Link>
               <Link href="/cart" className={navLink}>
                 장바구니
               </Link>
