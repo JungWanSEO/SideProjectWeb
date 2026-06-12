@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="스카프">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eff1ea"/>
+      <stop offset="1" stop-color="#dfe5d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M330,358 Q400,343 470,358 L470,688 Q400,673 330,688 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M330,520 Q400,505 470,520" fill="none"/>
+    <path d="M346,690 L346,726" fill="none"/>
+    <path d="M373,686 L373,724" fill="none"/>
+    <path d="M400,685 L400,726" fill="none"/>
+    <path d="M427,686 L427,724" fill="none"/>
+    <path d="M454,690 L454,726" fill="none"/>
+  </g>
+</svg>

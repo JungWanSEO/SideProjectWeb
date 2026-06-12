@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import ProductThumb from "@/components/ui/ProductThumb";
 import Badge from "@/components/ui/Badge";
 import { buttonClass } from "@/components/ui/Button";
+import { productImageSrc } from "@/lib/productImage";
 
 /**
  * 상품 상세 페이지 (/products/[id]).
@@ -80,7 +81,11 @@ export default function ProductDetailPage() {
       <div className="mt-6 grid gap-10 lg:grid-cols-2">
         {/* 이미지 */}
         <div className="relative">
-          <ProductThumb name={product.name} className="aspect-[4/5] w-full rounded-2xl shadow-soft" />
+          <ProductThumb
+            name={product.name}
+            src={productImageSrc(product)}
+            className="aspect-[4/5] w-full rounded-2xl shadow-soft"
+          />
           {product.status === "SOLD_OUT" && (
             <span className="absolute left-4 top-4">
               <Badge tone="dark">품절</Badge>

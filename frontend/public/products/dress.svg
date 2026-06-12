@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="원피스">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef1e9"/>
+      <stop offset="1" stop-color="#dbe3d0"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M330,300 Q400,332 470,300 L512,356 L455,430 L575,766 L225,766 L345,430 L288,356 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M345,430 Q400,452 455,430" fill="none"/>
+  </g>
+</svg>

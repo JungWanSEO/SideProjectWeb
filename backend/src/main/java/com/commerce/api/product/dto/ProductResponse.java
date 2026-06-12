@@ -16,6 +16,7 @@ public record ProductResponse(
         String name,
         long price,
         String description,
+        String imageUrl,        // 대표 이미지 URL (없으면 null → FE가 placeholder 폴백)
         ProductStatus status,
         Long categoryId,
         String categoryName,
@@ -33,6 +34,7 @@ public record ProductResponse(
                 product.getName(),
                 product.getPrice(),
                 product.getDescription(),
+                product.getImageUrl(),
                 product.getStatus(),
                 product.getCategoryId(),
                 categoryName,

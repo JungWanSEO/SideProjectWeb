@@ -34,6 +34,7 @@ export interface Product {
   name: string;
   price: number;
   description: string | null;
+  imageUrl: string | null; // 대표 이미지 URL — 없으면 화면에서 placeholder로 폴백
   status: ProductStatus;
   categoryId: number | null;
   categoryName: string | null;

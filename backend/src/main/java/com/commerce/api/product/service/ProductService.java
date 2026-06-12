@@ -71,6 +71,7 @@ public class ProductService {
                 .name(request.name())
                 .price(request.price())
                 .description(request.description())
+                .imageUrl(request.imageUrl())
                 .status(ProductStatus.ON_SALE)
                 .categoryId(request.categoryId())
                 .brandId(request.brandId())

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="재킷">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef0ea"/>
+      <stop offset="1" stop-color="#dde4d2"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M200,400 L300,330 Q400,360 500,330 L600,400 L560,470 L520,442 L520,760 L280,760 L280,442 L240,470 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M400,360 L400,760" fill="none"/>
+    <path d="M360,344 L400,422 L440,344" fill="none"/>
+    <circle cx="400" cy="502" r="7" fill="#6b5a49" stroke="none"/>
+    <circle cx="400" cy="566" r="7" fill="#6b5a49" stroke="none"/>
+    <circle cx="400" cy="630" r="7" fill="#6b5a49" stroke="none"/>
+  </g>
+</svg>

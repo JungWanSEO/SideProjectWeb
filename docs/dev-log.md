@@ -86,6 +86,9 @@
 - **다중 PG MPG-2 — 대사 PG별 분류/표시 강화** — 대사 불일치를 **어느 PG의 거래인지**로 분류·필터·표시. `PgSettlementRecord`에 `provider`(어댑터가 자기 `provider()` 기록 — 거래ID 프리픽스 `KAKAO-`≠provider `KAKAOPAY`라 프리픽스 파싱 불가), `Mismatch`에 provider(Flyway V13), `reconcile()`이 거래키별 provider 도출(우리=`SettlementEntry.provider`, PG측=리포트 provider)+**PG별 분해**(`byProvider`, 알파벳순), 불일치 목록에 **provider 필터**(`?provider=`, 대문자 정규화) (143 tests). **MySQL 런타임 검증 PASS**(2 PG 시나리오: TOSS matched+missingInOurs / KAKAOPAY statusMismatch, byProvider 분해·provider 필터·V13+validate).
 - **다중 PG MPG-stretch — 라우터 페일오버** — 요청 PG가 장애(설정상 down)·승인 거절이면 **다른 PG로 자동 대체**해 결제 성공률 방어. `PaymentGatewayRouter.approveWithFailover()`가 요청 PG 먼저→실패 시 나머지 PG(알파벳순) 순차 시도, **실제 승인한 PG**를 `PaymentRoutingResult`로 반환해 Payment에 기록(환불도 그 PG로). `payment.unavailable-providers`(설정/env)로 점검 PG 지정. `PaymentService.pay`는 한 줄 교체(전략은 라우터에 가둠), Flyway 불필요 (149 tests). **MySQL 런타임 검증 PASS**(KAKAOPAY down → 요청 KAKAOPAY가 TOSS로 페일오버 승인·Payment.provider=TOSS, 미지원 PG 400, WARN 로그 관측). **오답노트 스킬 신설**(`.claude/skills/mistake-log/` — 운영 함정 기록·참고).
 
+**10일차 (06-11)**
+- **Phase 1 #1 상품 이미지** — 제품 기획 Phase 1 착수. 백엔드 `Product.imageUrl`(대표 1장·갤러리는 후속) + Flyway **V14** + DTO/서비스/테스트 동기화, FE `ProductThumb`를 실제 `<img>`로(없으면 그라데이션 폴백) + **로컬 SVG 의류 일러스트 12종**(`public/products/`, imageUrl 없으면 상품명 키워드→id 순으로 결정적 매핑). 결정: 단일 대표 imageUrl·로컬 정적(실사진 불가→손수 SVG)·nullable+FE폴백(시드 불필요). **정적 검증 PASS**(테스트·tsc·lint) + **MySQL 런타임 검증 PASS**(Claude 직접: Flyway V14 적용·validate, imageUrl 유/무 HTTP 왕복, 캐노니컬 복원). ⚠️처음 "런타임 불가" 오판=셸 cwd 지속+Glob gitignore(오답노트 기록).
+
 **9일차 (06-10)**
 - **FE 다중 PG 노출 + 관리자 UX 정리** — 백엔드 다중 PG(MPG-1~3)를 화면으로. 결제 화면 **PG 선택**(토스/카카오페이→`provider` 전송), 어드민 정산 **PG·요율 컬럼 + PG별 분해**, 어드민 대사 **PG 컬럼 + PG 필터 + PG별 분해**, `lib/provider.ts`·`types.ts` 보강. UX: **관리자 로그인 시 정산 직행**(`login()`이 User 반환)·어드민 콘솔 **"스토어로" 링크 제거**. `tsc`/`next lint` 클린, 브라우저 E2E 확인. (FE는 테스트 없이 타입검사+브라우저 검증 — 기존 관례)
 - **다중 PG 비용기반 라우팅** — `provider="AUTO"`면 **가장 싼 PG 자동 선택**, 페일오버도 **비용 오름차순**(싼 PG부터). **요율 출처 단일화**: `SettlementPolicy` 요율 Map 제거 → **`PaymentGateway.feeRate()`가 단일 출처**(요율=PG 고유 속성), 라우터 `feeRateOf()`로 노출, **정산이 라우터에서 요율을 읽음**(settlement→payment 정방향) → 라우팅 비용·정산 수수료 정의가 한 곳. FE 결제화면에 "자동(최저 수수료)" 옵션. (152 tests) **MySQL 런타임 검증 PASS**(AUTO→TOSS 최저가·정산 fee=780 무결성). **다중 PG 라우팅 3전략(클라이언트 선택/페일오버/비용기반) 완성.**
@@ -113,4 +116,5 @@
 
 - **다중 PG 완주(06-08~10, dev 병합·런타임 검증)**: MPG-1(라우터)→MPG-3(정산 PG별 수수료율)→MPG-2(대사 PG별 분류)→MPG-stretch(라우터 페일오버)→**FE 노출**(결제 PG 선택·어드민 정산/대사 PG·요율 컬럼·관리자 UX) ✅(149 tests).
 - **결제 심화 한 줄 완성**: 정산 기록(매출≠결제액)→대사(5분류)→불일치 해소(예외 큐)→운영 화면(어드민 콘솔)→결제완료 이벤트(트랜잭셔널 아웃박스)→폴러 신뢰성(백오프·SKIP LOCKED)→다중 PG(라우터→PG별 수수료율→PG별 대사→페일오버→화면).
-- (다음 후보) 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 디자인 폴리시 / 옵션 추가·수정 API / 카테고리 계층화 / dev→main 승격(마일스톤).
+- **제품 기획 Phase 1 착수(06-11)**: #1 상품 이미지(대표 imageUrl + 로컬 SVG placeholder) — 정적 + **MySQL 런타임 검증 PASS**. 다음 = #2 리뷰·평점 도메인 → #3 패션 필터/검색 UI.
+- (다음 후보) 아웃박스 P2b(실제 RabbitMQ) / 대사 일자별 윈도우 / FE 디자인 폴리시 / 대표 이미지 갤러리(ProductImage) / 옵션 추가·수정 API / 카테고리 계층화 / dev→main 승격(마일스톤).

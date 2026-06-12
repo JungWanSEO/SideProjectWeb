@@ -6,6 +6,7 @@ import { apiGet } from "@/lib/api";
 import { PageResponse, Product } from "@/lib/types";
 import ProductThumb from "@/components/ui/ProductThumb";
 import Badge from "@/components/ui/Badge";
+import { productImageSrc } from "@/lib/productImage";
 
 /**
  * 상품 목록 페이지 (/products).
@@ -43,6 +44,7 @@ export default function ProductsPage() {
                 <div className="relative overflow-hidden rounded-2xl">
                   <ProductThumb
                     name={p.name}
+                    src={productImageSrc(p)}
                     className="aspect-[4/5] w-full transition duration-500 group-hover:scale-[1.03]"
                   />
                   {p.status === "SOLD_OUT" && (

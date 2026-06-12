@@ -66,7 +66,7 @@ class ProductServiceTest {
     void create_success() {
         // given
         ProductCreateRequest request = new ProductCreateRequest(
-                "반팔티셔츠", 29000L, "면 100%", null, null,
+                "반팔티셔츠", 29000L, "면 100%", null, null, null,
                 List.of(new ProductOptionRequest("M", 100)));
         given(productRepository.save(any(Product.class))).willReturn(productWithId(1L));
 

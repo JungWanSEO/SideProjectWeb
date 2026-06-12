@@ -30,6 +30,11 @@ public record ProductCreateRequest(
         @Size(max = 1000, message = "설명은 1000자 이하여야 합니다.")
         String description,
 
+        @Schema(description = "대표 이미지 URL(선택, 500자 이하). 비우면 화면에서 placeholder로 대체",
+                example = "/products/3.svg")
+        @Size(max = 500, message = "이미지 URL은 500자 이하여야 합니다.")
+        String imageUrl,
+
         @Schema(description = "카테고리 ID(선택)", example = "1")
         Long categoryId,
 

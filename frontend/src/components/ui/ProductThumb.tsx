@@ -1,5 +1,10 @@
-// 상품 이미지 placeholder — 더미 데이터에 이미지가 없어, 이름 해시로 따뜻한 그라데이션 +
-// 머리글자(세리프)를 그려 비주얼을 채운다. (실제 이미지 필드가 생기면 <img>로 교체)
+"use client";
+
+import { useState } from "react";
+
+// 상품 썸네일. src(이미지 경로)가 있으면 <img>로 렌더하고, 없거나 로드 실패하면
+// 이름 해시 기반 따뜻한 그라데이션 + 머리글자(세리프)로 우아하게 폴백한다.
+// (placeholder 경로는 productImageSrc()가 결정 — 여기선 렌더링만 책임진다.)
 const GRADIENTS = [
   "from-clay-100 to-clay-50",
   "from-sage-50 to-clay-50",
@@ -14,9 +19,33 @@ function hash(s: string): number {
   return h;
 }
 
-export default function ProductThumb({ name, className = "" }: { name: string; className?: string }) {
+export default function ProductThumb({
+  name,
+  src,
+  className = "",
+}: {
+  name: string;
+  src?: string | null;
+  className?: string;
+}) {
+  const [errored, setErrored] = useState(false);
+
+  if (src && !errored) {
+    return (
+      // 로컬 SVG/외부 URL 모두 받으므로 next/image 대신 평범한 <img>(설정 의존 없음).
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name}
+        loading="lazy"
+        onError={() => setErrored(true)}
+        className={`object-cover ${className}`}
+      />
+    );
+  }
+
+  // 폴백: "P01-Cap" → "Cap" → "C". 이름이 비슷해도 머리글자가 다양해지도록 대시 뒷부분을 쓴다.
   const gradient = GRADIENTS[hash(name) % GRADIENTS.length];
-  // "P01-Cap" → "Cap" → "C". 이름이 비슷해도 머리글자가 다양해지도록 대시 뒷부분을 쓴다.
   const label = name.includes("-") ? name.slice(name.lastIndexOf("-") + 1) : name;
   const initial = (label.trim()[0] ?? "·").toUpperCase();
   return (

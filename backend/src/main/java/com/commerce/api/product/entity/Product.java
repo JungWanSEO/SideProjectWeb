@@ -47,6 +47,13 @@ public class Product extends BaseEntity {
     @Column(length = 1000)
     private String description;
 
+    /**
+     * 대표 이미지 URL (nullable). 로컬 정적 자산 경로("/products/3.svg")나 외부 URL을 담는다.
+     * 갤러리(여러 장)는 후속 — 지금은 단일 대표 1장만(플랜의 '과투자 금지'). 비어 있으면 FE가 결정적 placeholder로 폴백.
+     */
+    @Column(length = 500)
+    private String imageUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ProductStatus status;
@@ -59,11 +66,12 @@ public class Product extends BaseEntity {
     private List<ProductOption> options = new ArrayList<>();
 
     @Builder
-    private Product(String name, long price, String description, ProductStatus status,
+    private Product(String name, long price, String description, String imageUrl, ProductStatus status,
                     Long categoryId, Long brandId) {
         this.name = name;
         this.price = price;
         this.description = description;
+        this.imageUrl = imageUrl;
         this.status = status;
         this.categoryId = categoryId;
         this.brandId = brandId;
