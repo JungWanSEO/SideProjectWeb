@@ -47,11 +47,13 @@ public class ProductController {
                 .body(ApiResponse.success("상품이 등록되었습니다.", response));
     }
 
-    @Operation(summary = "상품 목록 조회 / 검색·필터",
+    @Operation(summary = "상품 목록 조회 / 검색·필터·정렬",
             description = "공개 상품 목록을 페이지로 조회한다. 판매중·품절만 노출(판매중지 제외). "
-                    + "선택적 검색/필터: keyword(상품명 부분일치), minPrice·maxPrice(가격대). "
+                    + "선택적 검색/필터: keyword(상품명 부분일치), minPrice·maxPrice(가격대), "
+                    + "categoryId, brandId, optionSize(그 사이즈를 재고>0으로 가진 상품만). "
+                    + "정렬(sort): createdAt(최신), price(가격), ratingCount(리뷰수), ratingAverage(평점평균). "
                     + "기본 정렬은 최신순(createdAt desc), 기본 페이지 크기는 20. "
-                    + "예: ?keyword=셔츠&minPrice=10000&maxPrice=50000&sort=price,asc")
+                    + "예: ?optionSize=M&minPrice=10000&sort=ratingAverage,desc")
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> getProducts(
             // @ParameterObject: record의 필드(keyword/minPrice/maxPrice)를 각각의 쿼리 파라미터로 바인딩(+Swagger 문서화).

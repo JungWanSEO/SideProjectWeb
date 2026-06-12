@@ -20,6 +20,16 @@ export interface PageResponse<T> {
 
 export type ProductStatus = "ON_SALE" | "SOLD_OUT" | "DISCONTINUED";
 
+/** 카테고리 / 브랜드 (필터 드롭다운용) — 백엔드 CategoryResponse·BrandResponse */
+export interface Category {
+  id: number;
+  name: string;
+}
+export interface Brand {
+  id: number;
+  name: string;
+}
+
 /** 상품 옵션(사이즈) — 재고/품절은 옵션 단위 */
 export interface ProductOption {
   id: number;

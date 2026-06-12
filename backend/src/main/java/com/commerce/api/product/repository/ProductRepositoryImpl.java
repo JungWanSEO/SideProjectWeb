@@ -5,11 +5,15 @@ import static com.commerce.api.product.entity.QProduct.product;
 import com.commerce.api.product.dto.ProductSearchCondition;
 import com.commerce.api.product.entity.Product;
 import com.commerce.api.product.entity.ProductStatus;
+import com.commerce.api.product.entity.QProductOption;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.Order;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.NumberExpression;
 import com.querydsl.core.types.dsl.PathBuilder;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -47,7 +51,8 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
                 .and(priceGoe(condition.minPrice()))        // 최소가(있을 때만)
                 .and(priceLoe(condition.maxPrice()))        // 최대가(있을 때만)
                 .and(eqCategory(condition.categoryId()))    // 카테고리(있을 때만)
-                .and(eqBrand(condition.brandId()));         // 브랜드(있을 때만)
+                .and(eqBrand(condition.brandId()))          // 브랜드(있을 때만)
+                .and(hasAvailableOption(condition.optionSize()));  // 사이즈(있을 때만)
 
         // 2) 콘텐츠 조회: where + 정렬 + 페이지(offset/limit)
         List<Product> content = queryFactory
@@ -91,6 +96,23 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
     }
 
     /**
+     * 이 사이즈를 <b>구매 가능한(재고&gt;0)</b> 옵션으로 가진 상품만 — 옵션(SKU)에 대한 EXISTS 서브쿼리.
+     * (옵션은 애그리거트 내부 컬렉션이라 상품 행은 중복되지 않게 join 대신 exists로 건다.)
+     */
+    private BooleanExpression hasAvailableOption(String optionSize) {
+        if (!StringUtils.hasText(optionSize)) {
+            return null;
+        }
+        QProductOption option = QProductOption.productOption;
+        return JPAExpressions.selectOne()
+                .from(option)
+                .where(option.product.eq(product),
+                        option.size.eq(optionSize),
+                        option.stock.gt(0))
+                .exists();
+    }
+
+    /**
      * Pageable의 정렬(Sort)을 QueryDSL의 {@link OrderSpecifier} 배열로 변환한다.
      *
      * <p>Pageable은 "price,asc" 같은 <b>문자열 기반</b> 정렬을 담고 있어, QueryDSL이 이해하는
@@ -102,6 +124,18 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         PathBuilder<Product> path = new PathBuilder<>(Product.class, "product");
         for (Sort.Order o : sort) {
             Order direction = o.isAscending() ? Order.ASC : Order.DESC;
+
+            // 평점 평균(ratingAverage)은 엔티티 컬럼이 아니라 계산값 → 별도 컬럼 없이 식으로 정렬한다.
+            // 평균 = ratingSum/ratingCount, 리뷰가 없으면(count=0) -1로 두어 항상 맨 뒤로 보낸다.
+            if ("ratingAverage".equals(o.getProperty())) {
+                NumberExpression<Double> avg = new CaseBuilder()
+                        .when(product.ratingCount.eq(0)).then(-1.0)
+                        .otherwise(product.ratingSum.doubleValue().divide(product.ratingCount.doubleValue()));
+                orders.add(new OrderSpecifier<>(direction, avg));
+                continue;
+            }
+
+            // 그 외(createdAt·price·ratingCount 등 실제 컬럼)는 경로로 정렬.
             // 정렬 키가 런타임에 결정돼 제네릭 타입을 정적으로 알 수 없다 → raw 타입 사용(경고 억제).
             @SuppressWarnings({"unchecked", "rawtypes"})
             OrderSpecifier<?> spec = new OrderSpecifier(direction, path.get(o.getProperty()));
