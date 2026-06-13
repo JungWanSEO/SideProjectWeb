@@ -8,6 +8,9 @@
 *.iml
 *.iws
 *.ipr
+# VSCode: settings.json 은 개인 설정(예: claudeCode.*)이 섞여 추적 제외.
+#         launch.json(공유 디버그 설정)은 계속 추적.
+.vscode/settings.json
 
 # ── OS ──
 .DS_Store
