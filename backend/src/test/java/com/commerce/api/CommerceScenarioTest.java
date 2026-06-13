@@ -149,16 +149,31 @@ class CommerceScenarioTest {
                 .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"))
                 .andExpect(jsonPath("$.data.items[0].optionId").value((int) optionId));
 
-        // 11) 체크아웃: 장바구니 → PENDING 주문 + 장바구니 비우기 (한 트랜잭션)
+        // 11) 배송지 등록(주소록) — 체크아웃에서 선택할 주소. 첫 주소라 자동 기본배송지.
+        String addrJson = mockMvc.perform(post("/api/addresses")
+                        .cookie(userCookies)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recipient\":\"user\",\"phone\":\"010-1234-5678\",\"zipcode\":\"06236\","
+                                + "\"address1\":\"Seoul Gangnam\",\"address2\":\"4F\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].isDefault").value(true))
+                .andReturn().getResponse().getContentAsString();
+        long addressId = objectMapper.readTree(addrJson).path("data").get(0).path("id").asLong();
+
+        // 11-2) 체크아웃: 장바구니 → PENDING 주문 + 배송지 스냅샷 + 장바구니 비우기 (한 트랜잭션)
         String checkoutJson = mockMvc.perform(post("/api/orders/checkout")
-                        .cookie(userCookies))
+                        .cookie(userCookies)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + addressId + ",\"deliveryMemo\":\"leave at door\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.totalPrice").value(100000))   // 50000 x 2
                 .andExpect(jsonPath("$.data.items[0].productName").value("sneakers"))
+                .andExpect(jsonPath("$.data.shipping.recipient").value("user"))           // 배송지 스냅샷
+                .andExpect(jsonPath("$.data.shipping.deliveryMemo").value("leave at door"))
                 .andReturn().getResponse().getContentAsString();
         long checkoutOrderId = dataId(checkoutJson);
 
-        // 11-2) 체크아웃 주문 결제 → PAID
+        // 11-3) 체크아웃 주문 결제 → PAID
         mockMvc.perform(post("/api/payments")
                         .cookie(userCookies)
                         .contentType(MediaType.APPLICATION_JSON)

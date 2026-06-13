@@ -16,12 +16,15 @@ public record ProductResponse(
         String name,
         long price,
         String description,
+        String imageUrl,        // 대표 이미지 URL (없으면 null → FE가 placeholder 폴백)
         ProductStatus status,
         Long categoryId,
         String categoryName,
         Long brandId,
         String brandName,
         List<ProductOptionResponse> options,   // 사이즈별 재고/품절
+        int ratingCount,        // 리뷰 수
+        double ratingAverage,   // 평점 평균(소수 1자리, 리뷰 없으면 0)
         LocalDateTime createdAt
 ) {
     public static ProductResponse of(Product product, String categoryName, String brandName) {
@@ -33,12 +36,15 @@ public record ProductResponse(
                 product.getName(),
                 product.getPrice(),
                 product.getDescription(),
+                product.getImageUrl(),
                 product.getStatus(),
                 product.getCategoryId(),
                 categoryName,
                 product.getBrandId(),
                 brandName,
                 options,
+                product.getRatingCount(),
+                product.getRatingAverage(),
                 product.getCreatedAt()
         );
     }

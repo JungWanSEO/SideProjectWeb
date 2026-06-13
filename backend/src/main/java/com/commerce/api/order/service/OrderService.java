@@ -2,6 +2,7 @@ package com.commerce.api.order.service;
 
 import com.commerce.api.global.common.PageResponse;
 import com.commerce.api.global.exception.BusinessException;
+import com.commerce.api.order.dto.CheckoutRequest;
 import com.commerce.api.order.dto.OrderCreateRequest;
 import com.commerce.api.order.dto.OrderResponse;
 import com.commerce.api.order.dto.OrderSummaryResponse;
@@ -52,8 +53,8 @@ public class OrderService {
             retryFor = OptimisticLockingFailureException.class,
             maxAttempts = 3,
             backoff = @Backoff(delay = 100))
-    public OrderResponse checkout(Long memberId) {
-        return orderProcessor.checkout(memberId);
+    public OrderResponse checkout(Long memberId, CheckoutRequest request) {
+        return orderProcessor.checkout(memberId, request);
     }
 
     /**

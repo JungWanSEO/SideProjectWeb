@@ -7,6 +7,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import { Order } from "@/lib/types";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_BADGE } from "@/lib/orderStatus";
 import { useAuth } from "@/lib/auth";
+import { buttonClass } from "@/components/ui/Button";
 
 /** 주문 상세 (/orders/[id]). 본인 주문만(서버가 403으로 차단). PENDING=결제/취소, PAID=취소(환불). */
 export default function OrderDetailPage() {
@@ -48,14 +49,14 @@ export default function OrderDetailPage() {
     }
   };
 
-  if (authLoading || (user && loading)) return <p className="p-8 text-gray-500">불러오는 중…</p>;
+  if (authLoading || (user && loading)) return <p className="p-12 text-center text-muted">불러오는 중…</p>;
   if (!user) return null;
 
   if (error && !order) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-red-600">에러: {error}</p>
-        <Link href="/orders" className="mt-4 inline-block text-blue-600 hover:underline">
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <p className="text-danger">에러: {error}</p>
+        <Link href="/orders" className="mt-4 inline-block text-clay hover:underline">
           ← 주문 내역
         </Link>
       </main>
@@ -64,47 +65,65 @@ export default function OrderDetailPage() {
   if (!order) return null;
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <Link href="/orders" className="text-sm text-gray-500 hover:underline">
+    <main className="mx-auto max-w-3xl px-6 py-10">
+      <Link href="/orders" className="text-sm text-muted transition hover:text-clay">
         ← 주문 내역
       </Link>
 
-      <div className="mt-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">주문 #{order.id}</h1>
-        <span className={`rounded px-2 py-1 text-xs ${ORDER_STATUS_BADGE[order.status]}`}>
+      <div className="mt-5 flex items-center justify-between">
+        <h1 className="font-serif text-3xl text-ink">주문 #{order.id}</h1>
+        <span className={`rounded-full px-3 py-1 text-xs font-medium ${ORDER_STATUS_BADGE[order.status]}`}>
           {ORDER_STATUS_LABEL[order.status]}
         </span>
       </div>
-      <p className="mt-1 text-sm text-gray-400">{new Date(order.createdAt).toLocaleString("ko-KR")}</p>
+      <p className="mt-1 text-sm text-muted">{new Date(order.createdAt).toLocaleString("ko-KR")}</p>
 
-      <ul className="mt-6 divide-y divide-gray-200 border-y border-gray-200">
-        {order.items.map((it) => (
-          <li key={it.optionId} className="flex items-center justify-between py-4">
+      <ul className="mt-6 overflow-hidden rounded-2xl border border-line bg-paper">
+        {order.items.map((it, i) => (
+          <li
+            key={it.optionId}
+            className={`flex items-center justify-between px-5 py-4 ${i > 0 ? "border-t border-line" : ""}`}
+          >
             <div>
-              <p className="font-medium">{it.productName}</p>
-              <p className="text-sm text-gray-500">
+              <p className="font-serif text-lg text-ink">{it.productName}</p>
+              <p className="mt-0.5 text-sm text-muted">
                 사이즈 {it.size} · {it.quantity}개 · {it.orderPrice.toLocaleString()}원
               </p>
             </div>
-            <span className="font-semibold">{it.subtotal.toLocaleString()}원</span>
+            <span className="font-medium text-ink">{it.subtotal.toLocaleString()}원</span>
           </li>
         ))}
       </ul>
 
-      <div className="mt-6 flex items-center justify-between">
-        <span className="text-gray-500">합계</span>
-        <span className="text-xl font-bold">{order.totalPrice.toLocaleString()}원</span>
+      <div className="mt-6 flex items-center justify-between border-t border-line pt-5">
+        <span className="text-muted">합계</span>
+        <span className="text-2xl font-bold text-ink">{order.totalPrice.toLocaleString()}원</span>
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {/* 배송지 (주문 시점 스냅샷). 배송지 없이 만든 주문이면 표시 안 함. */}
+      {order.shipping && (
+        <section className="mt-6 rounded-2xl border border-line bg-paper p-5">
+          <h2 className="mb-2 font-serif text-lg text-ink">배송지</h2>
+          <p className="font-medium text-ink">
+            {order.shipping.recipient}
+            <span className="ml-2 text-sm font-normal text-muted">{order.shipping.phone}</span>
+          </p>
+          <p className="mt-1 text-sm text-ink/80">
+            [{order.shipping.zipcode}] {order.shipping.address1}
+            {order.shipping.address2 ? ` ${order.shipping.address2}` : ""}
+          </p>
+          {order.shipping.deliveryMemo && (
+            <p className="mt-1 text-sm text-muted">요청사항: {order.shipping.deliveryMemo}</p>
+          )}
+        </section>
+      )}
 
-      <div className="mt-6 flex gap-3">
+      {error && <p className="mt-4 text-sm text-danger">{error}</p>}
+
+      <div className="mt-7 flex gap-3">
         {/* PENDING(결제대기): 결제하기 + 취소 / PAID(결제완료): 취소=환불 / CANCELLED: 버튼 없음 */}
         {order.status === "PENDING" && (
-          <Link
-            href={`/orders/${order.id}/pay`}
-            className="rounded bg-gray-900 px-4 py-2 text-sm text-white transition hover:bg-gray-700"
-          >
+          <Link href={`/orders/${order.id}/pay`} className={buttonClass("primary", "md")}>
             결제하기
           </Link>
         )}
@@ -112,7 +131,7 @@ export default function OrderDetailPage() {
           <button
             onClick={cancel}
             disabled={cancelling}
-            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:border-red-400 hover:text-red-500 disabled:opacity-50"
+            className="rounded-full border border-line px-5 py-2.5 text-sm text-muted transition hover:border-danger hover:text-danger disabled:opacity-50"
           >
             {cancelling ? "취소 처리 중…" : "주문 취소"}
           </button>

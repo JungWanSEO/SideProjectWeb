@@ -28,17 +28,22 @@ export default function LoginPage() {
     }
   };
 
+  const inputClass =
+    "rounded-xl border border-line bg-paper px-4 py-3 text-ink outline-none transition placeholder:text-muted focus:border-clay";
+
   return (
-    <main className="mx-auto max-w-sm p-8">
-      <h1 className="mb-6 text-2xl font-bold">로그인</h1>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+    <main className="mx-auto flex min-h-[calc(100vh-65px)] max-w-sm flex-col justify-center px-6 py-12">
+      <h1 className="text-center font-serif text-3xl text-ink">로그인</h1>
+      <p className="mt-2 text-center text-sm text-muted">ATELIER에 오신 걸 환영합니다.</p>
+
+      <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-3">
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="이메일"
           required
-          className="rounded border border-gray-300 px-3 py-2"
+          className={inputClass}
         />
         <input
           type="password"
@@ -46,18 +51,18 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="비밀번호"
           required
-          className="rounded border border-gray-300 px-3 py-2"
+          className={inputClass}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="rounded bg-gray-900 px-4 py-2 text-white transition hover:bg-gray-700 disabled:opacity-50"
+          className="mt-1 rounded-full bg-clay px-4 py-3 font-medium text-cream transition hover:bg-clay-600 disabled:opacity-50"
         >
           {submitting ? "로그인 중…" : "로그인"}
         </button>
       </form>
-      <p className="mt-4 text-xs text-gray-400">테스트 계정: buyer@commerce.com / buyerpass1234</p>
+      <p className="mt-5 text-center text-xs text-muted">테스트 계정: buyer@commerce.com / buyerpass1234</p>
     </main>
   );
 }

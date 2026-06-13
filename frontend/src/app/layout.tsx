@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import Header from "@/components/Header";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "commerce",
+  title: "ATELIER — 패션 셀렉트샵",
   description: "패션 커머스 (포트폴리오)",
 };
 
@@ -24,11 +13,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // 폰트(Pretendard·나눔명조)는 globals.css에서 로드한다. lang=ko로 한글 우선.
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="ko">
+      <body className="min-h-screen bg-cream text-ink antialiased">
         <AuthProvider>
           <Header />
           {children}

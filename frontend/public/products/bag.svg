@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="가방">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6ece2"/>
+      <stop offset="1" stop-color="#ecd7c4"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M290,470 Q400,456 510,470 L528,762 Q400,778 272,762 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M348,470 Q360,372 400,372 Q440,372 452,470" fill="none"/>
+  </g>
+</svg>

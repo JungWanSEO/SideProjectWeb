@@ -50,9 +50,9 @@ class ProductControllerTest {
     @DisplayName("POST /api/products - 등록 성공 시 201")
     void create_success() throws Exception {
         given(productService.create(any())).willReturn(
-                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%", "/products/1.svg",
                         ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
-                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now()));
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), 0, 0.0, LocalDateTime.now()));
 
         mockMvc.perform(post("/api/products")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -66,6 +66,7 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.status").value("ON_SALE"))
                 .andExpect(jsonPath("$.data.categoryName").value("상의"))
                 .andExpect(jsonPath("$.data.brandName").value("Nike"))
+                .andExpect(jsonPath("$.data.imageUrl").value("/products/1.svg"))
                 .andExpect(jsonPath("$.data.options[0].size").value("M"))
                 .andExpect(jsonPath("$.data.options[0].stock").value(100));
     }
@@ -86,9 +87,9 @@ class ProductControllerTest {
     @DisplayName("GET /api/products - 목록 200, 페이지 메타 포함 + 파라미터 없으면 기본 정렬(createdAt desc, size 20)")
     void getProducts_success() throws Exception {
         PageResponse<ProductResponse> page = new PageResponse<>(
-                List.of(new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                List.of(new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%", "/products/1.svg",
                         ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
-                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now())),
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), 0, 0.0, LocalDateTime.now())),
                 0, 20, 1L, 1, false);
         given(productService.getProducts(any(ProductSearchCondition.class), any(Pageable.class)))
                 .willReturn(page);
@@ -145,9 +146,9 @@ class ProductControllerTest {
     @DisplayName("GET /api/products/{id} - 조회 성공 시 200")
     void getProduct_success() throws Exception {
         given(productService.getProduct(1L)).willReturn(
-                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%",
+                new ProductResponse(1L, "반팔티셔츠", 29000L, "면 100%", "/products/1.svg",
                         ProductStatus.ON_SALE, 1L, "상의", 1L, "Nike",
-                        List.of(new ProductOptionResponse(10L, "M", 100, false)), LocalDateTime.now()));
+                        List.of(new ProductOptionResponse(10L, "M", 100, false)), 0, 0.0, LocalDateTime.now()));
 
         mockMvc.perform(get("/api/products/1"))
                 .andExpect(status().isOk())

@@ -1,6 +1,7 @@
 package com.commerce.api.cart.entity;
 
 import com.commerce.api.global.common.BaseEntity;
+import com.commerce.api.global.exception.BusinessException;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,6 +15,7 @@ import java.util.List;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.http.HttpStatus;
 
 /**
  * 장바구니 (애그리거트 루트). 회원당 하나.
@@ -60,6 +62,19 @@ public class Cart extends BaseEntity {
                 .productId(productId).optionId(optionId).quantity(quantity).build();
         cartItems.add(newItem);
         newItem.assignCart(this);
+    }
+
+    /**
+     * 항목 수량 변경 (옵션 단위, 절대값으로 설정). 해당 옵션 항목이 없으면 404.
+     * addItem(가산)·removeItem(삭제)과 달리 기존 항목의 수량을 덮어쓴다 — 수량 스테퍼용.
+     */
+    public void updateItemQuantity(Long optionId, int quantity) {
+        CartItem item = cartItems.stream()
+                .filter(i -> i.getOptionId().equals(optionId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "장바구니에 해당 옵션 항목이 없습니다. (optionId: " + optionId + ")"));
+        item.changeQuantity(quantity);
     }
 
     /** 항목 제거 (옵션 단위, orphanRemoval로 DB에서도 삭제됨) */

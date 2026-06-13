@@ -70,6 +70,7 @@ class OrderControllerTest {
     private OrderResponse sampleOrder(OrderStatus status) {
         return new OrderResponse(1L, 1L, status, 30000L,
                 List.of(new OrderItemResponse(1L, 10L, "반팔티셔츠", "M", 10000L, 3, 30000L)),
+                null,   // shipping (배송지 없음 — 컨트롤러 슬라이스 테스트엔 불필요)
                 LocalDateTime.now());
     }
 
@@ -93,13 +94,29 @@ class OrderControllerTest {
     @Test
     @DisplayName("POST /api/orders/checkout - 체크아웃 성공 시 201")
     void checkout_success() throws Exception {
-        given(orderService.checkout(eq(1L))).willReturn(sampleOrder(OrderStatus.PENDING));
+        given(orderService.checkout(eq(1L), any())).willReturn(sampleOrder(OrderStatus.PENDING));
 
-        mockMvc.perform(post("/api/orders/checkout"))
+        mockMvc.perform(post("/api/orders/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"addressId":5,"deliveryMemo":"문 앞에"}
+                                """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.totalPrice").value(30000));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders/checkout - 배송지(addressId) 누락 시 400")
+    void checkout_validationFail() throws Exception {
+        mockMvc.perform(post("/api/orders/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"deliveryMemo":"주소 없음"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     @Test

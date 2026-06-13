@@ -8,9 +8,9 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: "취소됨",
 };
 
-// Tailwind 뱃지 클래스: 결제대기=주목(amber), 완료=강조(검정), 취소=흐림(회색)
+// Tailwind 뱃지 클래스(웜 부티크 토큰): 결제대기=점토(주목), 완료=세이지(positive), 취소=흐림
 export const ORDER_STATUS_BADGE: Record<OrderStatus, string> = {
-  PENDING: "bg-amber-100 text-amber-700",
-  PAID: "bg-gray-900 text-white",
-  CANCELLED: "bg-gray-200 text-gray-500",
+  PENDING: "bg-clay-50 text-clay-700",
+  PAID: "bg-sage-50 text-sage-600",
+  CANCELLED: "bg-line/60 text-muted",
 };

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="니트">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2ece2"/>
+      <stop offset="1" stop-color="#e7d7c5"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M300,342 Q400,374 500,342 L562,382 L600,640 L540,656 L520,456 L520,760 L280,760 L280,456 L260,656 L200,640 L238,382 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M345,350 Q400,380 455,350" fill="none"/>
+    <path d="M200,624 L262,652" fill="none"/>
+    <path d="M600,624 L538,652" fill="none"/>
+    <path d="M280,736 L520,736" fill="none"/>
+  </g>
+</svg>

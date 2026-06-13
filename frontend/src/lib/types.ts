@@ -20,6 +20,16 @@ export interface PageResponse<T> {
 
 export type ProductStatus = "ON_SALE" | "SOLD_OUT" | "DISCONTINUED";
 
+/** 카테고리 / 브랜드 (필터 드롭다운용) — 백엔드 CategoryResponse·BrandResponse */
+export interface Category {
+  id: number;
+  name: string;
+}
+export interface Brand {
+  id: number;
+  name: string;
+}
+
 /** 상품 옵션(사이즈) — 재고/품절은 옵션 단위 */
 export interface ProductOption {
   id: number;
@@ -34,12 +44,27 @@ export interface Product {
   name: string;
   price: number;
   description: string | null;
+  imageUrl: string | null; // 대표 이미지 URL — 없으면 화면에서 placeholder로 폴백
   status: ProductStatus;
   categoryId: number | null;
   categoryName: string | null;
   brandId: number | null;
   brandName: string | null;
   options: ProductOption[];
+  ratingCount: number; // 리뷰 수
+  ratingAverage: number; // 평점 평균(소수 1자리, 리뷰 없으면 0)
+  createdAt: string;
+}
+
+/** 리뷰 (ReviewResponse) */
+export interface Review {
+  id: number;
+  memberId: number;
+  writerName: string | null; // 작성자 닉네임(없으면 null)
+  productId: number;
+  rating: number; // 1~5
+  content: string;
+  imageUrl: string | null; // 사진리뷰(없으면 null)
   createdAt: string;
 }
 
@@ -61,6 +86,18 @@ export interface Cart {
   memberId: number;
   items: CartItem[];
   totalQuantity: number;
+}
+
+/** 배송지(주소록) — AddressResponse. 회원당 기본배송지(isDefault) 1개. */
+export interface Address {
+  id: number;
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  address1: string;
+  address2: string | null;
+  isDefault: boolean;
+  createdAt: string;
 }
 
 // 결제 도입 후: 주문은 결제 대기(PENDING) → 결제 완료(PAID) / 취소(CANCELLED)
@@ -92,6 +129,16 @@ export interface OrderItem {
   subtotal: number;
 }
 
+/** 주문 배송지 스냅샷 (OrderResponse.shipping) — 주문 시점에 주소록에서 복사. 없으면 null. */
+export interface ShippingInfo {
+  recipient: string;
+  phone: string;
+  zipcode: string;
+  address1: string;
+  address2: string | null;
+  deliveryMemo: string | null;
+}
+
 /** 주문 상세 (OrderResponse) */
 export interface Order {
   id: number;
@@ -99,6 +146,7 @@ export interface Order {
   status: OrderStatus;
   totalPrice: number;
   items: OrderItem[];
+  shipping: ShippingInfo | null;
   createdAt: string;
 }
 

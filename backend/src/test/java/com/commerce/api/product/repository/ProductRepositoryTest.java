@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * ProductRepository 슬라이스 테스트 (@DataJpaTest).
@@ -94,7 +95,7 @@ class ProductRepositoryTest {
         productRepository.save(product("판매중지티셔츠", ProductStatus.DISCONTINUED)); // 상태 제외
 
         Page<Product> page = productRepository.search(VISIBLE,
-                new ProductSearchCondition("티셔츠", null, null, null, null),
+                new ProductSearchCondition("티셔츠", null, null, null, null, null),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(page.getContent()).extracting(Product::getName)
@@ -109,7 +110,7 @@ class ProductRepositoryTest {
         productRepository.save(productPriced("C", 30000L, ProductStatus.ON_SALE));
 
         Page<Product> page = productRepository.search(VISIBLE,
-                new ProductSearchCondition(null, 15000L, 25000L, null, null),   // 15000 이상 ~ 25000 이하
+                new ProductSearchCondition(null, 15000L, 25000L, null, null, null),   // 15000 이상 ~ 25000 이하
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(page.getContent()).extracting(Product::getName).containsExactly("B");
@@ -123,7 +124,7 @@ class ProductRepositoryTest {
         }
 
         Page<Product> first = productRepository.search(VISIBLE,
-                new ProductSearchCondition(null, null, null, null, null),
+                new ProductSearchCondition(null, null, null, null, null, null),
                 PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(first.getContent()).hasSize(2);
@@ -141,9 +142,52 @@ class ProductRepositoryTest {
                 .description("d").status(ProductStatus.ON_SALE).categoryId(2L).build());
 
         Page<Product> page = productRepository.search(VISIBLE,
-                new ProductSearchCondition(null, null, null, 1L, null),   // categoryId=1만
+                new ProductSearchCondition(null, null, null, 1L, null, null),   // categoryId=1만
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(page.getContent()).extracting(Product::getName).containsExactly("상의A");
+    }
+
+    @Test
+    @DisplayName("search - optionSize: 그 사이즈를 재고>0으로 가진 상품만 (M 품절은 제외)")
+    void search_byOptionSize() {
+        Product hasM = product("M있음", ProductStatus.ON_SALE);
+        hasM.addOption(ProductOption.create("M", 5));
+        Product onlyL = product("L만", ProductStatus.ON_SALE);
+        onlyL.addOption(ProductOption.create("L", 5));
+        Product mSoldOut = product("M품절", ProductStatus.ON_SALE);
+        mSoldOut.addOption(ProductOption.create("M", 0));   // M이지만 재고0 → 제외
+        productRepository.save(hasM);
+        productRepository.save(onlyL);
+        productRepository.save(mSoldOut);
+
+        Page<Product> page = productRepository.search(VISIBLE,
+                new ProductSearchCondition(null, null, null, null, null, "M"),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        assertThat(page.getContent()).extracting(Product::getName).containsExactly("M있음");
+    }
+
+    @Test
+    @DisplayName("search - 평점 높은순(ratingAverage desc): 평균 내림차순, 리뷰 없는 상품은 맨 뒤")
+    void search_sortByRatingAverage() {
+        productRepository.save(rated("평균4.0", 2, 8));    // 8/2 = 4.0
+        productRepository.save(rated("평균5.0", 1, 5));    // 5/1 = 5.0
+        productRepository.save(rated("리뷰없음", 0, 0));   // count=0 → 맨 뒤
+
+        Page<Product> page = productRepository.search(VISIBLE,
+                new ProductSearchCondition(null, null, null, null, null, null),
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "ratingAverage")));
+
+        assertThat(page.getContent()).extracting(Product::getName)
+                .containsExactly("평균5.0", "평균4.0", "리뷰없음");
+    }
+
+    /** 평점 카운터를 직접 세팅한 상품(엔티티에 setter가 없어 리플렉션 사용). */
+    private Product rated(String name, int ratingCount, int ratingSum) {
+        Product p = product(name, ProductStatus.ON_SALE);
+        ReflectionTestUtils.setField(p, "ratingCount", ratingCount);
+        ReflectionTestUtils.setField(p, "ratingSum", ratingSum);
+        return p;
     }
 }

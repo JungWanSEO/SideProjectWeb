@@ -3,6 +3,7 @@ package com.commerce.api.order.controller;
 import com.commerce.api.global.common.ApiResponse;
 import com.commerce.api.global.common.PageResponse;
 import com.commerce.api.global.security.SecurityUtil;
+import com.commerce.api.order.dto.CheckoutRequest;
 import com.commerce.api.order.dto.OrderCreateRequest;
 import com.commerce.api.order.dto.OrderResponse;
 import com.commerce.api.order.dto.OrderSummaryResponse;
@@ -54,11 +55,13 @@ public class OrderController {
 
     @Operation(summary = "장바구니 체크아웃",
             description = "로그인 사용자의 장바구니를 주문으로 만들고 장바구니를 비운다(한 트랜잭션). "
-                    + "주문 항목은 서버의 장바구니에서 가져온다(클라이언트가 항목을 보내지 않음). 빈 장바구니면 400. "
+                    + "주문 항목은 서버의 장바구니에서 가져온다(클라이언트가 항목을 보내지 않음). 배송지는 주소록 항목(addressId)에서 "
+                    + "골라 주문에 스냅샷한다. 빈 장바구니면 400, 본인 주소가 아니면 403. "
                     + "주문은 결제 대기(PENDING)로 생성된다(재고 차감은 결제 승인 시).")
     @PostMapping("/checkout")
-    public ResponseEntity<ApiResponse<OrderResponse>> checkout() {
-        OrderResponse response = orderService.checkout(SecurityUtil.getCurrentMemberId());
+    public ResponseEntity<ApiResponse<OrderResponse>> checkout(
+            @Valid @RequestBody CheckoutRequest request) {
+        OrderResponse response = orderService.checkout(SecurityUtil.getCurrentMemberId(), request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success("주문이 접수되었습니다. (결제 대기)", response));

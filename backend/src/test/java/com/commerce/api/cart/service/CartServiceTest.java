@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 
 import com.commerce.api.cart.dto.CartItemAddRequest;
+import com.commerce.api.cart.dto.CartItemUpdateRequest;
 import com.commerce.api.cart.dto.CartResponse;
 import com.commerce.api.cart.entity.Cart;
 import com.commerce.api.cart.repository.CartRepository;
@@ -123,6 +124,52 @@ class CartServiceTest {
         // then
         assertThat(response.items()).isEmpty();
         assertThat(response.totalQuantity()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("수량 변경 - 절대값으로 덮어쓴다(가산이 아님)")
+    void changeQuantity_success() {
+        // given: 옵션 10을 2개 담은 장바구니
+        Product product = productWithOption(1L, 10L, "반팔티셔츠", 10000L, "M", 50);
+        Cart cart = Cart.create(100L);
+        cart.addItem(1L, 10L, 2);
+        given(cartRepository.findByMemberId(100L)).willReturn(Optional.of(cart));
+        given(productRepository.findAllById(any())).willReturn(List.of(product));
+
+        // when: 수량을 5로 변경
+        CartResponse response = cartService.changeQuantity(100L, 10L, new CartItemUpdateRequest(5));
+
+        // then: 2+5=7이 아니라 5로 덮어써짐
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).quantity()).isEqualTo(5);
+        assertThat(response.items().get(0).subtotal()).isEqualTo(50000L);  // 10000 * 5
+        assertThat(response.totalQuantity()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("수량 변경 실패 - 장바구니에 해당 옵션 항목이 없으면 예외")
+    void changeQuantity_itemNotFound() {
+        // given: 옵션 10만 담긴 장바구니
+        Cart cart = Cart.create(100L);
+        cart.addItem(1L, 10L, 2);
+        given(cartRepository.findByMemberId(100L)).willReturn(Optional.of(cart));
+
+        // when & then: 담기지 않은 옵션 99 변경 시도
+        assertThatThrownBy(() -> cartService.changeQuantity(100L, 99L, new CartItemUpdateRequest(3)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("해당 옵션 항목이 없습니다");
+    }
+
+    @Test
+    @DisplayName("수량 변경 실패 - 장바구니가 없으면 예외")
+    void changeQuantity_noCart() {
+        // given
+        given(cartRepository.findByMemberId(anyLong())).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> cartService.changeQuantity(100L, 10L, new CartItemUpdateRequest(3)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("장바구니가 없습니다");
     }
 
     @Test

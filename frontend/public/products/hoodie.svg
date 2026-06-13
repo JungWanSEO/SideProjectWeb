@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="후디">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8efe7"/>
+      <stop offset="1" stop-color="#eed6c4"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M210,386 L300,338 L500,338 L590,386 L600,452 L520,430 L520,742 L280,742 L280,430 L200,452 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M300,338 Q400,256 500,338 Q400,306 300,338 Z" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M384,344 L382,404" fill="none"/>
+    <path d="M418,344 L420,404" fill="none"/>
+    <path d="M336,566 L464,566 L464,666 L336,666 Z" fill="none"/>
+  </g>
+</svg>

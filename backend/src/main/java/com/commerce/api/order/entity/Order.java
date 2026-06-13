@@ -4,6 +4,7 @@ import com.commerce.api.global.common.BaseEntity;
 import com.commerce.api.global.exception.BusinessException;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -49,6 +50,10 @@ public class Order extends BaseEntity {
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> orderItems = new ArrayList<>();
 
+    /** 배송지 스냅샷(체크아웃 시 주소록에서 복사). 명시적 주문 생성 경로에선 null일 수 있다. */
+    @Embedded
+    private ShippingInfo shippingInfo;
+
     private Order(Long memberId) {
         this.memberId = memberId;
         this.status = OrderStatus.PENDING;   // 생성 시점 = 결제 대기
@@ -65,6 +70,11 @@ public class Order extends BaseEntity {
         orderItems.add(item);
         item.assignOrder(this);
         this.totalPrice += item.getSubtotal();
+    }
+
+    /** 배송지 스냅샷 지정 (체크아웃 시). */
+    public void ship(ShippingInfo shippingInfo) {
+        this.shippingInfo = shippingInfo;
     }
 
     /** 주문 취소 (이미 취소된 주문은 불가) */

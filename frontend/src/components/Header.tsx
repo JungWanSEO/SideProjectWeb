@@ -12,36 +12,41 @@ export default function Header() {
   // 어드민 경로는 자체 사이드바 레이아웃을 쓰므로 스토어 헤더는 숨긴다.
   if (pathname?.startsWith("/admin")) return null;
 
+  const navLink = "text-sm text-ink/70 transition hover:text-clay";
+
   return (
-    <header className="border-b border-gray-200">
-      <nav className="mx-auto flex max-w-5xl items-center justify-between p-4">
-        <Link href="/" className="font-bold">
-          commerce
+    <header className="sticky top-0 z-30 border-b border-line bg-cream/85 backdrop-blur">
+      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <Link href="/" className="font-serif text-2xl font-extrabold tracking-tight text-ink">
+          ATELIER
         </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/products" className="hover:underline">
+        <div className="flex items-center gap-6">
+          <Link href="/products" className={navLink}>
             상품
           </Link>
           {loading ? null : user ? (
             <>
-              <Link href="/orders" className="hover:underline">
+              <Link href="/orders" className={navLink}>
                 주문내역
               </Link>
-              <Link href="/cart" className="hover:underline">
+              <Link href="/account/addresses" className={navLink}>
+                배송지
+              </Link>
+              <Link href="/cart" className={navLink}>
                 장바구니
               </Link>
               {user.role === "ADMIN" && (
-                <Link href="/admin/settlements" className="font-medium text-gray-900 hover:underline">
+                <Link href="/admin/settlements" className="text-sm font-medium text-clay hover:text-clay-600">
                   관리자
                 </Link>
               )}
-              <span className="text-gray-600">{user.nickname}님</span>
-              <button onClick={() => logout()} className="text-gray-500 hover:underline">
+              <span className="hidden text-sm text-muted sm:inline">{user.nickname}님</span>
+              <button onClick={() => logout()} className="text-sm text-muted transition hover:text-ink">
                 로그아웃
               </button>
             </>
           ) : (
-            <Link href="/login" className="hover:underline">
+            <Link href="/login" className={navLink}>
               로그인
             </Link>
           )}

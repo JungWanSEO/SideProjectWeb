@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="선글라스">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5eee6"/>
+      <stop offset="1" stop-color="#ebdac8"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g stroke="#6b5a49" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+    <ellipse cx="308" cy="510" rx="108" ry="84" fill="#fffdfb" fill-opacity="0.65"/>
+    <ellipse cx="562" cy="510" rx="108" ry="84" fill="#fffdfb" fill-opacity="0.65"/>
+    <path d="M416,496 Q435,476 454,496" fill="none"/>
+    <path d="M203,496 L150,476" fill="none"/>
+    <path d="M667,496 L720,476" fill="none"/>
+  </g>
+</svg>

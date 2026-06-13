@@ -1,21 +1,36 @@
+/* 폰트: 본문=Pretendard(한글 산세리프, CDN), 헤딩=나눔명조(한글 세리프, Google) */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.min.css");
+@import url("https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf7f2; /* cream */
+  --foreground: #2b2521; /* ink */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-}
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  /* 헤딩은 세리프(명조) — 부티크 에디토리얼 톤 */
+  h1,
+  h2,
+  h3 {
+    font-family: "Nanum Myeongjo", serif;
+    letter-spacing: -0.01em;
+  }
+
+  /* 텍스트 선택 색을 점토색 톤으로 */
+  ::selection {
+    background: #ead3c6;
+    color: #2b2521;
+  }
 }
